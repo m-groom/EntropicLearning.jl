@@ -1,2 +1,2 @@
-# EntropicLearning-dev.jl
-Development repository for EntropicLearning.jl, an MLJ-compatibile implementation of various entropic learning methods
+# EntropicLearning.jl
+An MLJ-compatibile implementation of various entropic learning methods.
