@@ -1,6 +1,6 @@
 module EntropicLearning
 
-include("Transformers.jl")
+include("Transformers/Transformers.jl")
 using .Transformers
 export MinMaxScaler, QuantileTransformer
 
