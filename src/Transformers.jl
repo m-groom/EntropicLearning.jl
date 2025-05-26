@@ -72,8 +72,9 @@ function MLJBase.transform(transformer::MinMaxScaler, fitresult, X)
     scaled_columns = Vector{AbstractVector{Float64}}()
 
     for (j, name) in enumerate(col_names)
-        col_data = Tables.getcolumn(X, name)
-        col_vector = collect(col_data) # Ensure it's an iterable collection
+        col_data_abstract = Tables.getcolumn(X, name)
+        # Avoid collect if already an AbstractVector to reduce allocations
+        col_vector = col_data_abstract isa AbstractVector ? col_data_abstract : collect(col_data_abstract)
 
         current_data_min = data_mins[j]
         current_data_max = data_maxs[j]
@@ -85,10 +86,11 @@ function MLJBase.transform(transformer::MinMaxScaler, fitresult, X)
             # If data column is constant, map all values to f_min
             scaled_col_vector .= f_min
         else
-            # Standardise to [0,1]
-            vals_01 = (col_vector .- current_data_min) ./ data_range
-            # Scale to feature_range
-            scaled_col_vector .= vals_01 .* f_scale .+ f_min
+            inv_data_range = 1.0 / data_range
+            for i in eachindex(col_vector)
+                # Standardise to [0,1] then scale to feature_range
+                scaled_col_vector[i] = (col_vector[i] - current_data_min) * inv_data_range * f_scale + f_min
+            end
         end
 
         push!(scaled_columns, scaled_col_vector)
@@ -112,27 +114,28 @@ function MLJBase.inverse_transform(transformer::MinMaxScaler, fitresult, Xscaled
     restored_columns = Vector{AbstractVector{Float64}}()
 
     for (j, name) in enumerate(col_names)
-        scaled_col_data = Tables.getcolumn(Xscaled, name)
-        scaled_col_vector = collect(scaled_col_data) # Ensure it's an iterable collection
+        scaled_col_data_abstract = Tables.getcolumn(Xscaled, name)
+        scaled_col_vector = scaled_col_data_abstract isa AbstractVector ? scaled_col_data_abstract : collect(scaled_col_data_abstract)
 
         current_data_min = data_mins[j]
         current_data_max = data_maxs[j]
         data_range = current_data_max - current_data_min
 
-        val_01_vector = similar(scaled_col_vector, Float64)
-        if f_scale == 0.0
-            # If feature_range had zero width, all scaled values should be f_min.
-            val_01_vector .= 0.0
-        else
-            val_01_vector .= (scaled_col_vector .- f_min) ./ f_scale
-        end
-
         restored_col_vector = similar(scaled_col_vector, Float64)
         if data_range == 0.0
-            # If original data column was constant, all values should be current_data_min.
+            # If original data column was constant, all values should be current_data_min, regardless of f_scale.
+            restored_col_vector .= current_data_min
+        elseif f_scale == 0.0
+            # Original data had a range, but it was scaled to a single point (f_min). All scaled values should ideally be f_min. The unscaled value (0-1 range) is 0. So, restore to current_data_min.
             restored_col_vector .= current_data_min
         else
-            restored_col_vector .= val_01_vector .* data_range .+ current_data_min
+            # Both data_range and f_scale are non-zero.
+            inv_f_scale = 1.0 / f_scale
+            for i in eachindex(scaled_col_vector)
+                # Ensure input to Float64 conversion if elements are not already floats
+                val_01 = (scaled_col_vector[i] - f_min) * inv_f_scale
+                restored_col_vector[i] = val_01 * data_range + current_data_min
+            end
         end
         push!(restored_columns, restored_col_vector)
     end
@@ -217,8 +220,9 @@ function MLJBase.transform(transformer::QuantileTransformer, fitresult, Xnew)
     transformed_cols = Vector{AbstractVector{Float64}}()
 
     for (j, name) in enumerate(Xnew_col_names)
-        col_data = Tables.getcolumn(Xnew, name)
-        col_vector = collect(col_data) # Ensure it's an iterable collection
+        col_data_abstract = Tables.getcolumn(Xnew, name)
+        # Avoid collect if already an AbstractVector
+        col_vector = col_data_abstract isa AbstractVector ? col_data_abstract : collect(col_data_abstract)
 
         # Ensure fitresult.quantiles_list has an entry for j
         if j > length(fitresult.quantiles_list)
@@ -230,7 +234,7 @@ function MLJBase.transform(transformer::QuantileTransformer, fitresult, Xnew)
         new_col = similar(col_vector, Float64)
 
         if n_quantiles == 0
-            fill!(new_col, (min_range + max_range) / 2.0)
+            fill!(new_col, (min_range + max_range) * 0.5)
         elseif n_quantiles == 1
             q_val = current_quantiles[1]
             for i in eachindex(col_vector)
@@ -241,38 +245,41 @@ function MLJBase.transform(transformer::QuantileTransformer, fitresult, Xnew)
                     0.0
                 elseif val > q_val
                     1.0
-                else
-                    0.5
+                else # val == q_val
+                    0.5 # Convention for single quantile: map to midpoint
                 end
                 new_col[i] = p * range_span + min_range
             end
         else
             q_min = current_quantiles[1]
             q_max = current_quantiles[end]
+            # Pre-calculate inverse of (n_quantiles - 1) to avoid repeated division
+            inv_n_quantiles_minus_1 = 1.0 / (n_quantiles - 1)
 
             for i in eachindex(col_vector)
                 val = float(col_vector[i])
                 p = 0.0
 
                 if !isfinite(val)
-                    p = 0.5
+                    p = 0.5 # Convention for non-finite values: map to midpoint of target range
                 elseif val <= q_min
                     p = 0.0
                 elseif val >= q_max
                     p = 1.0
                 else
+                    # Find insertion point
                     idx = searchsortedlast(current_quantiles, val)
                     q_i = current_quantiles[idx]
-                    p_i = (idx - 1) / (n_quantiles - 1)
+                    p_i = (idx - 1) * inv_n_quantiles_minus_1
 
-                    if val == q_i
+                    if val == q_i # Value falls exactly on a quantile
                         p = p_i
-                    else # Interpolate: q_i < val < q_i_plus_1 (idx+1 is valid as val < q_max)
+                    else # Interpolate between q_i and q_i_plus_1
                         q_i_plus_1 = current_quantiles[idx+1]
-                        p_i_plus_1 = idx / (n_quantiles - 1)
-                        # Handle division by zero if q_i_plus_1 == q_i (shouldn't happen with unique quantiles)
+                        p_i_plus_1 = idx * inv_n_quantiles_minus_1
+                        
                         denominator = q_i_plus_1 - q_i
-                        fraction = denominator == 0 ? 0.0 : (val - q_i) / denominator
+                        fraction = denominator == 0.0 ? 0.0 : (val - q_i) / denominator
                         p = p_i + fraction * (p_i_plus_1 - p_i)
                     end
                 end
@@ -301,12 +308,16 @@ function MLJBase.inverse_transform(transformer::QuantileTransformer, fitresult, 
 
     min_range, max_range = transformer.feature_range
     range_span = max_range - min_range
+    # Handle range_span == 0 separately to avoid division by zero with inv_range_span
+    inv_range_span = range_span == 0.0 ? 0.0 : 1.0 / range_span # Will be used if range_span != 0
 
     original_cols = Vector{AbstractVector{Float64}}()
 
     for (j, name) in enumerate(Xtransformed_col_names)
-        col_data = Tables.getcolumn(Xtransformed, name)
-        col_vector = collect(col_data) # Ensure it's an iterable collection
+        col_data_abstract = Tables.getcolumn(Xtransformed, name)
+        # Avoid collect if already an AbstractVector
+        col_vector = col_data_abstract isa AbstractVector ? col_data_abstract : collect(col_data_abstract)
+        
         if j > length(fitresult.quantiles_list)
             error("Mismatch in column count or order for inverse_transform for column: $name")
         end
@@ -314,12 +325,12 @@ function MLJBase.inverse_transform(transformer::QuantileTransformer, fitresult, 
         n_quantiles = length(current_quantiles)
 
         new_col = similar(col_vector, Float64)
-
         if n_quantiles == 0
-            fill!(new_col, NaN)
+            fill!(new_col, NaN) # No quantiles, cannot determine original value
         elseif n_quantiles == 1
-            fill!(new_col, current_quantiles[1])
+            fill!(new_col, current_quantiles[1]) # All values map to the single quantile
         else
+            n_quantiles_minus_1 = n_quantiles - 1 # Cache this
             for i in eachindex(col_vector)
                 s_val = col_vector[i]
                 p = 0.0
@@ -332,24 +343,28 @@ function MLJBase.inverse_transform(transformer::QuantileTransformer, fitresult, 
                 if range_span == 0 # min_range == max_range: use 0.5, implying the middle of the ECDF.
                     p = 0.5
                 else
-                    p = (s_val - min_range) / range_span
+                    p = (s_val - min_range) * inv_range_span
                 end
 
-                p = clamp(p, 0.0, 1.0)
+                p = clamp(p, 0.0, 1.0) # Ensure p is within [0,1]
 
-                idx_float = p * (n_quantiles - 1) + 1
+                # Interpolate based on p to find the original value from quantiles
+                idx_float = p * n_quantiles_minus_1 + 1.0   # idx_float is the fractional index into the quantiles array
 
-                lower_idx = clamp(floor(Int, idx_float), 1, n_quantiles)
-                upper_idx = clamp(ceil(Int, idx_float), 1, n_quantiles)
+                lower_idx = floor(Int, idx_float)
+                upper_idx = ceil(Int, idx_float)
+                
+                # Clamp indices to be within bounds of current_quantiles array
+                lower_idx = clamp(lower_idx, 1, n_quantiles)
+                upper_idx = clamp(upper_idx, 1, n_quantiles)
 
                 if lower_idx == upper_idx
                     new_col[i] = current_quantiles[lower_idx]
                 else
                     weight = idx_float - lower_idx
-                    # Ensure indices are valid after clamp and before accessing current_quantiles
                     val_lower = current_quantiles[lower_idx]
                     val_upper = current_quantiles[upper_idx]
-                    new_col[i] = (1 - weight) * val_lower + weight * val_upper
+                    new_col[i] = (1.0 - weight) * val_lower + weight * val_upper
                 end
             end
         end
