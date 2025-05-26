@@ -21,7 +21,7 @@ For each feature (column) `X_col` in the input data, the transformation is:
   Defaults to `(0.0, 1.0)`.
 """
 mutable struct MinMaxScaler <: MLJBase.Unsupervised
-    feature_range::Tuple{Float64, Float64}
+    feature_range::Tuple{Float64,Float64}
 end
 
 # Keyword constructor
@@ -52,11 +52,11 @@ function MLJBase.fit(transformer::MinMaxScaler, verbosity::Int, X)
             push!(all_maxs, Float64(maximum(col_iterable)))
         end
     end
-    
-    fitresult = (mins = all_mins, maxs = all_maxs)
+
+    fitresult = (mins=all_mins, maxs=all_maxs)
     cache = nothing # No cache needed
     report = nothing # TODO: return names of features that were scaled
-    
+
     return fitresult, cache, report
 end
 
@@ -65,7 +65,7 @@ function MLJBase.transform(transformer::MinMaxScaler, fitresult, X)
     col_names = Tables.columnnames(X)
     data_mins = fitresult.mins
     data_maxs = fitresult.maxs
-    
+
     f_min, f_max = transformer.feature_range
     f_scale = f_max - f_min
 
@@ -78,7 +78,7 @@ function MLJBase.transform(transformer::MinMaxScaler, fitresult, X)
         current_data_min = data_mins[j]
         current_data_max = data_maxs[j]
         data_range = current_data_max - current_data_min
-        
+
         scaled_col_vector = similar(col_vector, Float64)
 
         if data_range == 0.0
@@ -93,11 +93,11 @@ function MLJBase.transform(transformer::MinMaxScaler, fitresult, X)
 
         push!(scaled_columns, scaled_col_vector)
     end
-    
+
     named_tuple_data = NamedTuple{Tuple(col_names)}(Tuple(scaled_columns))
     output_table = MLJBase.table(named_tuple_data)
     return output_table
-    
+
 end
 
 # inverse_transform method: reverses the scaling
@@ -105,7 +105,7 @@ function MLJBase.inverse_transform(transformer::MinMaxScaler, fitresult, Xscaled
     col_names = Tables.columnnames(Xscaled)
     data_mins = fitresult.mins
     data_maxs = fitresult.maxs
-    
+
     f_min, f_max = transformer.feature_range
     f_scale = f_max - f_min
 
@@ -118,15 +118,15 @@ function MLJBase.inverse_transform(transformer::MinMaxScaler, fitresult, Xscaled
         current_data_min = data_mins[j]
         current_data_max = data_maxs[j]
         data_range = current_data_max - current_data_min
-        
+
         val_01_vector = similar(scaled_col_vector, Float64)
         if f_scale == 0.0
             # If feature_range had zero width, all scaled values should be f_min.
-            val_01_vector .= 0.0 
+            val_01_vector .= 0.0
         else
             val_01_vector .= (scaled_col_vector .- f_min) ./ f_scale
         end
-        
+
         restored_col_vector = similar(scaled_col_vector, Float64)
         if data_range == 0.0
             # If original data column was constant, all values should be current_data_min.
@@ -136,7 +136,7 @@ function MLJBase.inverse_transform(transformer::MinMaxScaler, fitresult, Xscaled
         end
         push!(restored_columns, restored_col_vector)
     end
-    
+
     named_tuple_data = NamedTuple{Tuple(col_names)}(Tuple(restored_columns))
     output_table = MLJBase.table(named_tuple_data)
     return output_table
@@ -148,7 +148,7 @@ MLJBase.output_scitype(::Type{<:MinMaxScaler}) = MLJBase.Table(MLJBase.Continuou
 
 # Fitted parameters
 function MLJBase.fitted_params(::MinMaxScaler, fitresult) # TODO: also return names of features that were scaled
-    return (min_values_per_feature = fitresult.mins, max_values_per_feature = fitresult.maxs)
+    return (min_values_per_feature=fitresult.mins, max_values_per_feature=fitresult.maxs)
 end
 
 """
@@ -169,13 +169,13 @@ The inverse transformation maps values from `feature_range` back to the original
   Defaults to `(0.0, 1.0)`.
 """
 mutable struct QuantileTransformer <: MLJBase.Unsupervised
-    feature_range::Tuple{Float64, Float64}
+    feature_range::Tuple{Float64,Float64}
 end
 
 # Keyword constructor
 function QuantileTransformer(; feature_range=(0.0, 1.0))
     if feature_range[1] > feature_range[2]
-        error("Upper bound of feature_range ($(feature_range[2])) must be greater than or equal to the lower bound ($(feature_range[1]))." )
+        error("Upper bound of feature_range ($(feature_range[2])) must be greater than or equal to the lower bound ($(feature_range[1])).")
     end
     return QuantileTransformer(feature_range)
 end
@@ -197,11 +197,11 @@ function MLJBase.fit(transformer::QuantileTransformer, verbosity::Int, X)
             push!(quantiles_per_column, sort(unique(numeric_col_data)))
         end
     end
-    
-    fitresult = (quantiles_list = quantiles_per_column, col_names = col_names)
-    cache = nothing 
-    report = nothing 
-    
+
+    fitresult = (quantiles_list=quantiles_per_column, col_names=col_names)
+    cache = nothing
+    report = nothing
+
     return fitresult, cache, report
 end
 
@@ -226,27 +226,27 @@ function MLJBase.transform(transformer::QuantileTransformer, fitresult, Xnew)
         end
         current_quantiles = fitresult.quantiles_list[j]
         n_quantiles = length(current_quantiles)
-        
+
         new_col = similar(col_vector, Float64)
 
-        if n_quantiles == 0 
-            fill!(new_col, (min_range + max_range) / 2.0) 
+        if n_quantiles == 0
+            fill!(new_col, (min_range + max_range) / 2.0)
         elseif n_quantiles == 1
             q_val = current_quantiles[1]
             for i in eachindex(col_vector)
                 val = float(col_vector[i])
                 p = if !isfinite(val)
-                    0.5 
+                    0.5
                 elseif val < q_val
                     0.0
                 elseif val > q_val
                     1.0
-                else 
-                    0.5 
+                else
+                    0.5
                 end
                 new_col[i] = p * range_span + min_range
             end
-        else 
+        else
             q_min = current_quantiles[1]
             q_max = current_quantiles[end]
 
@@ -255,7 +255,7 @@ function MLJBase.transform(transformer::QuantileTransformer, fitresult, Xnew)
                 p = 0.0
 
                 if !isfinite(val)
-                    p = 0.5 
+                    p = 0.5
                 elseif val <= q_min
                     p = 0.0
                 elseif val >= q_max
@@ -265,7 +265,7 @@ function MLJBase.transform(transformer::QuantileTransformer, fitresult, Xnew)
                     q_i = current_quantiles[idx]
                     p_i = (idx - 1) / (n_quantiles - 1)
 
-                    if val == q_i 
+                    if val == q_i
                         p = p_i
                     else # Interpolate: q_i < val < q_i_plus_1 (idx+1 is valid as val < q_max)
                         q_i_plus_1 = current_quantiles[idx+1]
@@ -283,7 +283,7 @@ function MLJBase.transform(transformer::QuantileTransformer, fitresult, Xnew)
     end
 
     # Reconstruct the table with the original column names from fitting
-    output_col_names = fitresult.col_names 
+    output_col_names = fitresult.col_names
     if length(transformed_cols) != length(output_col_names)
         error("Internal error: Number of transformed columns does not match number of fitted column names.")
     end
@@ -312,33 +312,33 @@ function MLJBase.inverse_transform(transformer::QuantileTransformer, fitresult, 
         end
         current_quantiles = fitresult.quantiles_list[j]
         n_quantiles = length(current_quantiles)
-        
-        new_col = similar(col_vector, Float64) 
 
-        if n_quantiles == 0 
+        new_col = similar(col_vector, Float64)
+
+        if n_quantiles == 0
             fill!(new_col, NaN)
         elseif n_quantiles == 1
             fill!(new_col, current_quantiles[1])
         else
             for i in eachindex(col_vector)
                 s_val = col_vector[i]
-                p = 0.0 
-                
+                p = 0.0
+
                 if !isfinite(s_val)
                     new_col[i] = NaN
                     continue
                 end
 
                 if range_span == 0 # min_range == max_range: use 0.5, implying the middle of the ECDF.
-                    p = 0.5 
+                    p = 0.5
                 else
                     p = (s_val - min_range) / range_span
                 end
-                
+
                 p = clamp(p, 0.0, 1.0)
 
                 idx_float = p * (n_quantiles - 1) + 1
-                
+
                 lower_idx = clamp(floor(Int, idx_float), 1, n_quantiles)
                 upper_idx = clamp(ceil(Int, idx_float), 1, n_quantiles)
 
@@ -355,7 +355,7 @@ function MLJBase.inverse_transform(transformer::QuantileTransformer, fitresult, 
         end
         push!(original_cols, new_col)
     end
-    
+
     output_col_names = fitresult.col_names
     if length(original_cols) != length(output_col_names)
         error("Internal error: Number of inverse_transformed columns does not match number of fitted column names.")
@@ -371,7 +371,7 @@ MLJBase.input_scitype(::Type{<:QuantileTransformer}) = MLJBase.Table(MLJBase.Con
 MLJBase.target_scitype(::Type{<:QuantileTransformer}) = MLJBase.Table(MLJBase.Continuous) # Output of transform
 
 function MLJBase.fitted_params(::QuantileTransformer, fitresult)
-    return (quantiles_list = fitresult.quantiles_list, col_names = fitresult.col_names)
+    return (quantiles_list=fitresult.quantiles_list, col_names=fitresult.col_names)
 end
 
 end # module Transformers 
