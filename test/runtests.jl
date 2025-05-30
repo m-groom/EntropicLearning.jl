@@ -1,5 +1,6 @@
 using Test
 
 @testset "EntropicLearning.jl" begin
-    include("Transformers.jl")
+    include("utilities.jl")
+    include("common.jl")
 end
