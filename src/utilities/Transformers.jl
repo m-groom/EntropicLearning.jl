@@ -277,7 +277,7 @@ function MLJBase.transform(transformer::QuantileTransformer, fitresult, Xnew)
                     else # Interpolate between q_i and q_i_plus_1
                         q_i_plus_1 = current_quantiles[idx+1]
                         p_i_plus_1 = idx * inv_n_quantiles_minus_1
-                        
+
                         denominator = q_i_plus_1 - q_i
                         fraction = denominator == 0.0 ? 0.0 : (val - q_i) / denominator
                         p = p_i + fraction * (p_i_plus_1 - p_i)
@@ -317,7 +317,7 @@ function MLJBase.inverse_transform(transformer::QuantileTransformer, fitresult, 
         col_data_abstract = Tables.getcolumn(Xtransformed, name)
         # Avoid collect if already an AbstractVector
         col_vector = col_data_abstract isa AbstractVector ? col_data_abstract : collect(col_data_abstract)
-        
+
         if j > length(fitresult.quantiles_list)
             error("Mismatch in column count or order for inverse_transform for column: $name")
         end
@@ -353,7 +353,7 @@ function MLJBase.inverse_transform(transformer::QuantileTransformer, fitresult, 
 
                 lower_idx = floor(Int, idx_float)
                 upper_idx = ceil(Int, idx_float)
-                
+
                 # Clamp indices to be within bounds of current_quantiles array
                 lower_idx = clamp(lower_idx, 1, n_quantiles)
                 upper_idx = clamp(upper_idx, 1, n_quantiles)
