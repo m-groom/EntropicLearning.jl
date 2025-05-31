@@ -20,6 +20,11 @@ using Statistics # For mean, etc.
 
         @test safelog(0.0; tol=1e-20) == log(1e-20)
         @test safelog([0.0, 1.0]; tol=1e-20) ≈ [log(1e-20), log(1.0)]
+
+        # Test with a matrix
+        m = [1.0 exp(3.0); 0.0 -2.0]
+        m_safe = [log(1.0) 3.0; log(smallest) log(smallest)]
+        @test safelog(m; tol=smallest) ≈ m_safe
     end
 
     @testset "entropy Tests" begin
@@ -42,6 +47,63 @@ using Statistics # For mean, etc.
         # Test with a matrix
         W_matrix = [0.1 0.4; 0.2 0.3]
         @test entropy(W_matrix) ≈ -(0.1*log(0.1) + 0.2*log(0.2) + 0.4*log(0.4) + 0.3*log(0.3))
+    end
+
+    @testset "cross_entropy Tests" begin
+        # Basic matrices (Float64)
+        A_m1 = [0.1 0.9; 0.8 0.2]
+        B_m1 = [0.2 0.8; 0.7 0.3]
+        # Expected: - (0.1*log(0.2) + 0.8*log(0.7) + 0.9*log(0.8) + 0.2*log(0.3))
+        expected_ce_m1 = -( A_m1[1,1]*log(B_m1[1,1]) + A_m1[2,1]*log(B_m1[2,1]) + 
+                              A_m1[1,2]*log(B_m1[1,2]) + A_m1[2,2]*log(B_m1[2,2]) )
+        @test cross_entropy(A_m1, B_m1) ≈ expected_ce_m1
+
+        # Basic vectors (Float32)
+        A_v1 = Float32[0.25, 0.75]
+        B_v1 = Float32[0.5, 0.5]
+        expected_ce_v1 = -(0.25f0*log(0.5f0) + 0.75f0*log(0.5f0))
+        @test cross_entropy(A_v1, B_v1) ≈ expected_ce_v1
+        @test typeof(cross_entropy(A_v1, B_v1)) == promote_type(Float32, Float32, Float64) # Accumulator promotes
+
+        # 3D Arrays
+        A_3d = rand(2,2,2); A_3d ./= sum(A_3d)
+        B_3d = rand(2,2,2); B_3d ./= sum(B_3d) # Make B_3d probabilities too
+        expected_ce_3d = 0.0
+        for i in eachindex(A_3d, B_3d)
+            expected_ce_3d -= A_3d[i] * log(B_3d[i])
+        end
+        @test cross_entropy(A_3d, B_3d) ≈ expected_ce_3d
+
+        # Test with tol and zeros in B
+        A_m2 = [0.5 0.5]
+        B_m2_zeros = [0.0 1.0]
+        custom_tol = 1e-10
+        # Expected: -(0.5*log(custom_tol) + 0.5*log(1.0))
+        expected_ce_m2_tol = -(0.5*log(custom_tol) + 0.5*log(1.0))
+        @test cross_entropy(A_m2, B_m2_zeros; tol=custom_tol) ≈ expected_ce_m2_tol
+        
+        # Test with smallest tol (default)
+        # Expected: -(0.5*log(smallest) + 0.5*log(1.0))
+        expected_ce_m2_smallest = -(0.5*safelog(0.0; tol=EntropicLearning.smallest) + 0.5*log(1.0))
+        @test cross_entropy(A_m2, B_m2_zeros) ≈ expected_ce_m2_smallest
+
+        # DimensionMismatch Tests
+        A_m_dim = [1.0 2.0]
+        B_m_dim_wrong = [1.0 2.0 3.0]
+        @test_throws DimensionMismatch cross_entropy(A_m_dim, B_m_dim_wrong)
+        
+        A_v_dim = [1.0]
+        B_v_dim_wrong = [1.0, 2.0]
+        @test_throws DimensionMismatch cross_entropy(A_v_dim, B_v_dim_wrong)
+
+        # using OffsetArrays
+        # A_off = OffsetArray([0.1, 0.9], 0:1)
+        # B_off_match = OffsetArray([0.2, 0.8], 0:1)
+        # B_off_mismatch = OffsetArray([0.2, 0.8], 1:2)
+        # expected_ce_off = -(0.1*log(0.2) + 0.9*log(0.8))
+        # @test cross_entropy(A_off, B_off_match) ≈ expected_ce_off
+        # @test_throws DimensionMismatch cross_entropy(A_off, B_off_mismatch)
+
     end
 
     @testset "assign_closest Tests" begin

@@ -7,14 +7,14 @@ const small = 1e4 * smaller
 """
     safelog(x; tol=smallest)
 
-Computes the natural logarithm of `x` (or each element of `x` if `x` is an `AbstractVector`)
+Computes the natural logarithm of `x` (or each element of `x` if `x` is an `AbstractArray`)
 safely by ensuring the argument to `log` is at least `tol`.
 
 If `x` (or an element of `x`) is less than `tol`, `log(tol)` is computed instead.
 This helps to avoid errors when `x` (or its elements) are zero or negative.
 
 # Arguments
-- `x::Union{Real, AbstractVector{<:Real}}`: The input value or vector of values.
+- `x::Union{Real, AbstractArray{<:Real}}`: The input value or array of values.
 
 # Keyword Arguments
 - `tol::Real`: The tolerance level. Values of `x` (or its elements) below `tol` will be
@@ -22,16 +22,16 @@ This helps to avoid errors when `x` (or its elements) are zero or negative.
   in this context, as defined in `src/common/functions.jl`).
 
 # Returns
-- `Real` or `AbstractVector{<:Real}`: The natural logarithm of `max(x, tol)` (or `max.(x, tol)` for vectors).
-  The return type generally matches the input type (scalar or vector, preserving vector type if possible).
+- `Real` or `AbstractArray{<:Real}`: The natural logarithm of `max(x, tol)` (or `max.(x, tol)` for arrays).
+  The return type generally matches the input type (scalar or array, preserving array type if possible).
 
 """
-safelog(x::Tr; tol=smallest) where {Tr<:Real} = log(max(x, tol))
-safelog(x::AbstractVector{Tr}; tol=smallest) where {Tr<:Real} = log.(max.(x, tol))
+safelog(x::Tr; tol::Real=smallest) where {Tr<:Real} = log(max(x, tol))
+safelog(x::AbstractArray{Tr}; tol::Real=smallest) where {Tr<:Real} = log.(max.(x, tol))
 
 
 """
-    entropy(W::T; tol=smallest) where {T<:AbstractArray}
+    entropy(W::AbstractArray{<:Real}; tol=smallest)
 
 Computes the Shannon entropy H(W) = -∑ᵢ Wᵢ log(Wᵢ) for an input array `W`.
 
@@ -39,10 +39,10 @@ The computation uses `safelog` to handle cases where elements of `W` might be ze
 or very small, ensuring numerical stability.
 
 # Arguments
-- `W::T`: An `AbstractArray` (e.g., vector or matrix) of probabilities or
-  weights. The elements of `W` should ideally sum to 1 if representing a
-  probability distribution, but the function will compute the entropy regardless.
-  `T` can be any subtype of `AbstractArray`.
+- `W::AbstractArray{<:Real}`: An array (e.g., vector or matrix) containing `Real` numbers,
+  typically probabilities or weights. The elements of `W` should ideally sum to 1
+  if representing a probability distribution, but the function will compute the
+  entropy regardless.
 
 # Keyword Arguments
 - `tol::Real`: Tolerance level passed to `safelog`. Values of `W[i]` below `tol`
@@ -52,14 +52,47 @@ or very small, ensuring numerical stability.
 - `Float64`: The computed Shannon entropy of `W`.
 
 """
-function entropy(W::T; tol=smallest) where {T<:AbstractArray}
-  H = 0.0
-  @inbounds for d in eachindex(W)
+function entropy(W::AbstractArray{Tr}; tol::Real=smallest) where {Tr<:Real}
+  H = zero(Float64)
+  @inbounds @simd for d in eachindex(W)
     H += W[d] * safelog(W[d]; tol=tol)
   end
   return -H
 end
 
+"""
+    cross_entropy(A::AbstractArray{T1}, B::AbstractArray{T2}; tol=smallest) where {T1<:Real, T2<:Real}
+
+Computes the cross-entropy C(A, B) = -∑ᵢ Aᵢ log(Bᵢ) for two `AbstractArray`s `A` and `B`.
+
+The arrays `A` and `B` must have the same axes. The computation uses `safelog`
+to handle cases where elements of `B` might be zero or very small, ensuring
+numerical stability. This provides a general implementation for N-dimensional arrays.
+
+# Arguments
+- `A::AbstractArray{T1}`: The first input array. `T1` must be a subtype of `Real`.
+- `B::AbstractArray{T2}`: The second input array, whose elements will be passed to `log`.
+  `T2` must be a subtype of `Real`. Must have the same axes as `A`.
+
+# Keyword Arguments
+- `tol::Real`: Tolerance level passed to `safelog`. Values of `B[i]` below `tol`
+  will be replaced by `tol` before taking the logarithm. Defaults to `smallest`.
+
+# Returns
+- `promote_type(T1, T2, Float64)`: The computed cross-entropy. The type is determined by
+  the element types of `A`, `B`, and `Float64` to ensure precision.
+"""
+function cross_entropy(A::AbstractArray{T1}, B::AbstractArray{T2}; tol::Real=smallest) where {T1<:Real, T2<:Real}
+  if axes(A) != axes(B)
+    throw(DimensionMismatch("Arrays A and B must have the same axes."))
+  end
+  C = zero(promote_type(T1, T2, Float64))
+  
+  @inbounds @simd for i in eachindex(A, B) # eachindex(A,B) iterates efficiently and checks compatibility
+    C += A[i] * safelog(B[i]; tol=tol)
+  end
+  return -C
+end
 
 """
     assign_closest(distances::AbstractMatrix{Tr}) where {Tr<:Real}
@@ -406,7 +439,7 @@ function softmax!(W::AbstractVector{Tf}, b::AbstractVector{Tf}; prefactor::Tf=Tf
       W[d] /= sum_W
     end
   end
-  
+
   return nothing
 end
 
