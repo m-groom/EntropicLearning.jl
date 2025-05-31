@@ -163,4 +163,115 @@ using Statistics # For mean, etc.
         @test all(isnan, B)
     end
 
+    @testset "Softmax Functions Tests" begin
+        # Helper function for checking sum-to-one property
+        function check_sum_to_one(M, dim) # dim=1 for columns, dim=2 for rows (not used here, but general)
+            if ndims(M) == 1
+                return sum(M) ≈ 1.0
+            else
+                return all(sum(M, dims=dim) .≈ 1.0)
+            end
+        end
+
+        @testset "softmax! (Matrix, G provided)" begin
+            # Basic Float64
+            A_f64 = [1.0 0.0; 0.0 1.0]
+            G_f64 = similar(A_f64)
+            A_orig_f64 = copy(A_f64)
+            @test softmax!(G_f64, A_f64) === nothing
+            @test A_f64 == A_orig_f64 # A is scaled by prefactor=1.0, so effectively unchanged if prefactor not given
+            @test G_f64[:, 1] ≈ [exp(1.0)/(exp(1.0)+exp(0.0)), exp(0.0)/(exp(1.0)+exp(0.0))]
+            @test G_f64[:, 2] ≈ [exp(0.0)/(exp(0.0)+exp(1.0)), exp(1.0)/(exp(0.0)+exp(1.0))]
+            @test check_sum_to_one(G_f64, 1)
+
+            # Basic Float32 with prefactor
+            A_f32 = Float32[1.0 2.0; 3.0 4.0]
+            G_f32 = similar(A_f32)
+            A_orig_f32 = copy(A_f32)
+            pf = 0.5f0
+            softmax!(G_f32, A_f32; prefactor=pf)
+            A_scaled_f32 = A_orig_f32 ./ pf
+            @test A_f32 ≈ A_scaled_f32 # A is mutated by prefactor
+            col1_exp_scaled = exp.(A_scaled_f32[:,1] .- maximum(A_scaled_f32[:,1]))
+            col2_exp_scaled = exp.(A_scaled_f32[:,2] .- maximum(A_scaled_f32[:,2]))
+            @test G_f32[:, 1] ≈ col1_exp_scaled ./ sum(col1_exp_scaled)
+            @test G_f32[:, 2] ≈ col2_exp_scaled ./ sum(col2_exp_scaled)
+            @test check_sum_to_one(G_f32, 1)
+
+            # Empty input
+            A_empty = Matrix{Float64}(undef, 0, 2)
+            G_empty = similar(A_empty)
+            @test softmax!(G_empty, A_empty) === nothing
+            @test size(G_empty) == (0,2)
+
+            A_empty2 = Matrix{Float64}(undef, 2, 0)
+            G_empty2 = similar(A_empty2)
+            @test softmax!(G_empty2, A_empty2) === nothing # loop over columns won't run
+            @test size(G_empty2) == (2,0)
+
+            # All -Inf
+            A_neg_inf = fill(-Inf, 2, 2)
+            G_neg_inf = similar(A_neg_inf)
+            A_orig_neg_inf = copy(A_neg_inf)
+            softmax!(G_neg_inf, A_neg_inf)
+            @test A_neg_inf == A_orig_neg_inf # -Inf / 1.0 is still -Inf
+            @test all(G_neg_inf .≈ 0.5)
+            @test check_sum_to_one(G_neg_inf, 1)
+
+            # Very small numbers (potential underflow to zero sum)
+            A_small = [1e-300 1e-300; 1e-300 1e-300] 
+            G_small = similar(A_small)
+            softmax!(G_small, A_small; prefactor=1e-200) # Makes numbers extremely small
+            @test all(G_small .≈ 0.5) # Should fallback to uniform
+            @test check_sum_to_one(G_small, 1)
+
+            # Prefactor error
+            A_err = [1.0 0.0; 0.0 1.0]
+            G_err = similar(A_err)
+            @test_throws ArgumentError softmax!(G_err, A_err; prefactor=0.0)
+            @test_throws ArgumentError softmax!(G_err, A_err; prefactor=-1.0)
+        end
+
+        @testset "softmax! (Vector, W provided)" begin
+            b_f64 = [1.0, 0.0, 1.0]
+            w_f64 = similar(b_f64)
+            b_orig_f64 = copy(b_f64)
+            @test softmax!(w_f64, b_f64) === nothing
+            @test b_f64 == b_orig_f64 # b is scaled by prefactor=1.0
+            norm_factor = exp(1.0) + exp(0.0) + exp(1.0)
+            @test w_f64 ≈ [exp(1.0)/norm_factor, exp(0.0)/norm_factor, exp(1.0)/norm_factor]
+            @test check_sum_to_one(w_f64, 1)
+
+            b_f32 = Float32[1.0, 2.0, 3.0]
+            w_f32 = similar(b_f32)
+            b_orig_f32 = copy(b_f32)
+            pf = 0.1f0
+            softmax!(w_f32, b_f32; prefactor=pf)
+            b_scaled_f32 = b_orig_f32 ./ pf
+            @test b_f32 ≈ b_scaled_f32 # b is mutated
+            b_exp_scaled = exp.(b_scaled_f32 .- maximum(b_scaled_f32))
+            @test w_f32 ≈ b_exp_scaled ./ sum(b_exp_scaled)
+            @test check_sum_to_one(w_f32, 1)
+
+            # Empty input
+            b_empty = Float64[]
+            w_empty = similar(b_empty)
+            @test softmax!(w_empty, b_empty) === nothing
+            @test length(w_empty) == 0
+
+            # All -Inf
+            b_neg_inf = fill(-Inf, 3)
+            w_neg_inf = similar(b_neg_inf)
+            b_orig_neg_inf = copy(b_neg_inf)
+            softmax!(w_neg_inf, b_neg_inf)
+            @test b_neg_inf == b_orig_neg_inf
+            @test all(w_neg_inf .≈ 1/3)
+            @test check_sum_to_one(w_neg_inf, 1)
+            
+            # Prefactor error
+            b_err = [1.0, 0.0]
+            w_err = similar(b_err)
+            @test_throws ArgumentError softmax!(w_err, b_err; prefactor=0.0)
+        end
+    end
 end
