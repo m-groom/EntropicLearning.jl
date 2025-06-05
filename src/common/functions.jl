@@ -1,6 +1,6 @@
 # General functions used across eSPA, SPARTAN and EON
 
-const smallest = eps()
+const smallest = eps(Float64)
 const smaller = 1e4 * smallest
 const small = 1e4 * smaller
 
@@ -53,11 +53,11 @@ or very small, ensuring numerical stability.
 
 """
 function entropy(W::AbstractArray{Tr}; tol::Real=smallest) where {Tr<:Real}
-  H = zero(Float64)
+  H = zero(promote_type(Tr, Float64))
   @inbounds @simd for d in eachindex(W)
-    H += W[d] * safelog(W[d]; tol=tol)
+    H -= W[d] * safelog(W[d]; tol=tol)
   end
-  return -H
+  return H
 end
 
 """
@@ -82,16 +82,16 @@ numerical stability. This provides a general implementation for N-dimensional ar
 - `promote_type(T1, T2, Float64)`: The computed cross-entropy. The type is determined by
   the element types of `A`, `B`, and `Float64` to ensure precision.
 """
-function cross_entropy(A::AbstractArray{T1}, B::AbstractArray{T2}; tol::Real=smallest) where {T1<:Real, T2<:Real}
+function cross_entropy(A::AbstractArray{T1}, B::AbstractArray{T2}; tol::Real=smallest) where {T1<:Real,T2<:Real}
   if axes(A) != axes(B)
     throw(DimensionMismatch("Arrays A and B must have the same axes."))
   end
   C = zero(promote_type(T1, T2, Float64))
-  
-  @inbounds @simd for i in eachindex(A, B) # eachindex(A,B) iterates efficiently and checks compatibility
-    C += A[i] * safelog(B[i]; tol=tol)
+
+  @inbounds @simd for i in eachindex(A, B)
+    C -= A[i] * safelog(B[i]; tol=tol)
   end
-  return -C
+  return C
 end
 
 """
