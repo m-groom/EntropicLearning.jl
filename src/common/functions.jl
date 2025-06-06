@@ -29,7 +29,6 @@ This helps to avoid errors when `x` (or its elements) are zero or negative.
 safelog(x::Tr; tol::Real=smallest) where {Tr<:Real} = log(max(x, tol))
 safelog(x::AbstractArray{Tr}; tol::Real=smallest) where {Tr<:Real} = log.(max.(x, tol))
 
-
 """
     entropy(W::AbstractArray{<:Real}; tol=smallest)
 
@@ -53,11 +52,11 @@ or very small, ensuring numerical stability.
 
 """
 function entropy(W::AbstractArray{Tr}; tol::Real=smallest) where {Tr<:Real}
-  H = zero(promote_type(Tr, Float64))
-  @inbounds @simd for d in eachindex(W)
-    H -= W[d] * safelog(W[d]; tol=tol)
-  end
-  return H
+    H = zero(promote_type(Tr, Float64))
+    @inbounds @simd for d in eachindex(W)
+        H -= W[d] * safelog(W[d]; tol=tol)
+    end
+    return H
 end
 
 """
@@ -82,16 +81,18 @@ numerical stability. This provides a general implementation for N-dimensional ar
 - `promote_type(T1, T2, Float64)`: The computed cross-entropy. The type is determined by
   the element types of `A`, `B`, and `Float64` to ensure precision.
 """
-function cross_entropy(A::AbstractArray{T1}, B::AbstractArray{T2}; tol::Real=smallest) where {T1<:Real,T2<:Real}
-  if axes(A) != axes(B)
-    throw(DimensionMismatch("Arrays A and B must have the same axes."))
-  end
-  C = zero(promote_type(T1, T2, Float64))
+function cross_entropy(
+    A::AbstractArray{T1}, B::AbstractArray{T2}; tol::Real=smallest
+) where {T1<:Real,T2<:Real}
+    if axes(A) != axes(B)
+        throw(DimensionMismatch("Arrays A and B must have the same axes."))
+    end
+    C = zero(promote_type(T1, T2, Float64))
 
-  @inbounds @simd for i in eachindex(A, B)
-    C -= A[i] * safelog(B[i]; tol=tol)
-  end
-  return C
+    @inbounds @simd for i in eachindex(A, B)
+        C -= A[i] * safelog(B[i]; tol=tol)
+    end
+    return C
 end
 
 """
@@ -126,10 +127,10 @@ reference point.
   `distances` vector.
 """
 function assign_closest(distances::AbstractMatrix{Tr}) where {Tr<:Real}
-  return argmin.(eachcol(distances))
+    return argmin.(eachcol(distances))
 end
 function assign_closest(distances::AbstractVector{Tr}) where {Tr<:Real}
-  return argmin(distances)
+    return argmin(distances)
 end
 
 """
@@ -161,13 +162,15 @@ all other entries in that column of `Gamma` are set to `zero(T)`.
 - [`assign_closest!(::SparseMatrixCSC, ::AbstractMatrix)`](@ref): The method for
   sparse assignment matrices.
 """
-function assign_closest!(Gamma::AbstractMatrix{T}, distances::AbstractMatrix{Tr}) where {T<:Real,Tr<:Real}
-  assignments = assign_closest(distances)
-  fill!(Gamma, zero(T))
-  @inbounds for (i, j) in enumerate(assignments)
-    Gamma[j, i] = one(T)
-  end
-  return nothing
+function assign_closest!(
+    Gamma::AbstractMatrix{T}, distances::AbstractMatrix{Tr}
+) where {T<:Real,Tr<:Real}
+    assignments = assign_closest(distances)
+    fill!(Gamma, zero(T))
+    @inbounds for (i, j) in enumerate(assignments)
+        Gamma[j, i] = one(T)
+    end
+    return nothing
 end
 
 """
@@ -205,11 +208,12 @@ which stores the row indices of the non-zero elements.
 - [`assign_closest!(::AbstractMatrix, ::AbstractMatrix)`](@ref): The method for
   dense assignment matrices.
 """
-function assign_closest!(Gamma::SparseMatrixCSC{Tb,Ti}, distances::AbstractMatrix{Tr}) where {Tb<:Bool,Ti<:Integer,Tr<:Real}
-  Gamma.rowval .= assign_closest(distances)
-  return nothing
+function assign_closest!(
+    Gamma::SparseMatrixCSC{Tb,Ti}, distances::AbstractMatrix{Tr}
+) where {Tb<:Bool,Ti<:Integer,Tr<:Real}
+    Gamma.rowval .= assign_closest(distances)
+    return nothing
 end
-
 
 """
     left_stochastic(A::AbstractMatrix{Tr}) where {Tr<:Real}
@@ -297,7 +301,6 @@ is modified directly.
 """
 right_stochastic!(A::AbstractMatrix{Tr}) where {Tr<:Real} = A ./= sum(A, dims=2)
 
-
 """
     softmax!(G, A; prefactor=1.0)
     softmax!(A; prefactor=1.0)
@@ -341,113 +344,117 @@ or `Inf` (also resulting in a uniform distribution).
 # See Also
 - [`softmax`](@ref): Non-mutating version of this function.
 """
-function softmax!(G::AbstractMatrix{Tf}, A::AbstractMatrix{Tf}; prefactor::Tf=Tf(1.0)) where {Tf<:AbstractFloat}
-  @assert size(G) == size(A) "Size of G and A must be the same"
-  if prefactor <= zero(Tf)
-    throw(ArgumentError("prefactor must be positive"))
-  end
+function softmax!(
+    G::AbstractMatrix{Tf}, A::AbstractMatrix{Tf}; prefactor::Tf=Tf(1.0)
+) where {Tf<:AbstractFloat}
+    @assert size(G) == size(A) "Size of G and A must be the same"
+    if prefactor <= zero(Tf)
+        throw(ArgumentError("prefactor must be positive"))
+    end
 
-  if size(A, 1) == 0 # No elements to compute softmax over in each column
+    if size(A, 1) == 0 # No elements to compute softmax over in each column
+        return nothing
+    end
+
+    # A is modified in place by this operation.
+    A ./= prefactor
+
+    @inbounds for t in axes(A, 2)
+        # Get a view of the current column of A (which is already scaled)
+        current_col_A = view(A, :, t)
+        # Get a view of the current column of G for modification
+        current_col_G = view(G, :, t)
+
+        max_col_A = maximum(current_col_A)
+
+        if max_col_A == Tf(-Inf)
+            # All elements in the original column were -Inf or became -Inf after scaling.
+            # Softmax is taken as uniform in this ambiguous case.
+            current_col_G .= Tf(1.0) / size(A, 1)
+            continue # Move to the next column
+        end
+
+        # Compute the exponentials
+        @simd for k in axes(A, 1)
+            current_col_G[k] = exp(A[k, t] - max_col_A)
+        end
+
+        # Normalise
+        sum_col_G = sum(current_col_G)
+
+        # Handle cases where sum_col_G is zero (all underflowed), negative (should not happen), NaN, or Inf.
+        if sum_col_G <= eps(Tf) || !isfinite(sum_col_G)
+            # Fallback to a uniform distribution for this column.
+            current_col_G .= Tf(1.0) / size(A, 1)
+        else
+            # Standard normalisation
+            @simd for k in axes(G, 1)
+                current_col_G[k] /= sum_col_G
+            end
+        end
+    end
     return nothing
-  end
-
-  # A is modified in place by this operation.
-  A ./= prefactor
-
-  @inbounds for t in axes(A, 2)
-    # Get a view of the current column of A (which is already scaled)
-    current_col_A = view(A, :, t)
-    # Get a view of the current column of G for modification
-    current_col_G = view(G, :, t)
-
-    max_col_A = maximum(current_col_A)
-
-    if max_col_A == Tf(-Inf)
-      # All elements in the original column were -Inf or became -Inf after scaling.
-      # Softmax is taken as uniform in this ambiguous case.
-      current_col_G .= Tf(1.0) / size(A, 1)
-      continue # Move to the next column
-    end
-
-    # Compute the exponentials
-    @simd for k in axes(A, 1)
-      current_col_G[k] = exp(A[k, t] - max_col_A)
-    end
-
-    # Normalise
-    sum_col_G = sum(current_col_G)
-
-    # Handle cases where sum_col_G is zero (all underflowed), negative (should not happen), NaN, or Inf.
-    if sum_col_G <= eps(Tf) || !isfinite(sum_col_G)
-      # Fallback to a uniform distribution for this column.
-      current_col_G .= Tf(1.0) / size(A, 1)
-    else
-      # Standard normalisation
-      @simd for k in axes(G, 1)
-        current_col_G[k] /= sum_col_G
-      end
-    end
-  end
-  return nothing
 end
 
 # Mutating softmax - matrix input (G not provided)
 function softmax!(A::AbstractMatrix{Tf}; prefactor::Tf=Tf(1.0)) where {Tf<:AbstractFloat}
-  G = similar(A)
-  softmax!(G, A; prefactor=prefactor)
-  return G
+    G = similar(A)
+    softmax!(G, A; prefactor=prefactor)
+    return G
 end
 
 # Mutating softmax - vector input 
-function softmax!(W::AbstractVector{Tf}, b::AbstractVector{Tf}; prefactor::Tf=Tf(1.0)) where {Tf<:AbstractFloat}
-  @assert length(W) == length(b) "Length of W and b must be the same"
-  if prefactor <= zero(Tf)
-    throw(ArgumentError("prefactor must be positive"))
-  end
-
-  if length(b) == 0
-    return nothing # W is also empty, nothing to do
-  end
-
-  # b is modified in place by this operation. 
-  b ./= prefactor
-
-  max_b = maximum(b)
-
-  if max_b == Tf(-Inf)
-    # All elements in b were -Inf or became -Inf after scaling.
-    # Softmax is taken as uniform in this ambiguous case.
-    W .= Tf(1.0) / length(b)
-    return nothing
-  end
-
-  # Compute the exponentials
-  @inbounds @simd for d in eachindex(b)
-    W[d] = exp(b[d] - max_b)
-  end
-
-  # Normalise
-  sum_W = sum(W)
-
-  # Handle cases where sum_W is zero (all underflowed), negative (should not happen), NaN, or Inf.
-  if sum_W <= eps(Tf) || !isfinite(sum_W)
-    # Fallback to a uniform distribution.
-    W .= Tf(1.0) / length(b)
-  else
-    # Standard normalisation
-    @inbounds @simd for d in eachindex(W)
-      W[d] /= sum_W
+function softmax!(
+    W::AbstractVector{Tf}, b::AbstractVector{Tf}; prefactor::Tf=Tf(1.0)
+) where {Tf<:AbstractFloat}
+    @assert length(W) == length(b) "Length of W and b must be the same"
+    if prefactor <= zero(Tf)
+        throw(ArgumentError("prefactor must be positive"))
     end
-  end
 
-  return nothing
+    if length(b) == 0
+        return nothing # W is also empty, nothing to do
+    end
+
+    # b is modified in place by this operation. 
+    b ./= prefactor
+
+    max_b = maximum(b)
+
+    if max_b == Tf(-Inf)
+        # All elements in b were -Inf or became -Inf after scaling.
+        # Softmax is taken as uniform in this ambiguous case.
+        W .= Tf(1.0) / length(b)
+        return nothing
+    end
+
+    # Compute the exponentials
+    @inbounds @simd for d in eachindex(b)
+        W[d] = exp(b[d] - max_b)
+    end
+
+    # Normalise
+    sum_W = sum(W)
+
+    # Handle cases where sum_W is zero (all underflowed), negative (should not happen), NaN, or Inf.
+    if sum_W <= eps(Tf) || !isfinite(sum_W)
+        # Fallback to a uniform distribution.
+        W .= Tf(1.0) / length(b)
+    else
+        # Standard normalisation
+        @inbounds @simd for d in eachindex(W)
+            W[d] /= sum_W
+        end
+    end
+
+    return nothing
 end
 
 # Mutating softmax - vector input (W not provided)
 function softmax!(b::AbstractVector{Tf}; prefactor::Tf=Tf(1.0)) where {Tf<:AbstractFloat}
-  W = similar(b)
-  softmax!(W, b; prefactor=prefactor)
-  return W
+    W = similar(b)
+    softmax!(W, b; prefactor=prefactor)
+    return W
 end
 
 """
@@ -482,16 +489,16 @@ of edge cases (empty inputs, `-Inf` values, problematic sums of exponentials).
 - [`softmax!`](@ref): Mutating version of this function.
 """
 function softmax(A::AbstractMatrix{Tf}; prefactor::Tf=Tf(1.0)) where {Tf<:AbstractFloat}
-  G = similar(A)
-  # Pass a copy of A to softmax! to prevent modifying the original A
-  softmax!(G, copy(A); prefactor=prefactor)
-  return G
+    G = similar(A)
+    # Pass a copy of A to softmax! to prevent modifying the original A
+    softmax!(G, copy(A); prefactor=prefactor)
+    return G
 end
 
 # Softmax - vector input 
 function softmax(b::AbstractVector{Tf}; prefactor::Tf=Tf(1.0)) where {Tf<:AbstractFloat}
-  W = similar(b)
-  # Pass a copy of b to softmax! to prevent modifying the original b
-  softmax!(W, copy(b); prefactor=prefactor)
-  return W
+    W = similar(b)
+    # Pass a copy of b to softmax! to prevent modifying the original b
+    softmax!(W, copy(b); prefactor=prefactor)
+    return W
 end

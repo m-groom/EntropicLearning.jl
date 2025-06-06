@@ -27,7 +27,9 @@ end
 # Keyword constructor
 function MinMaxScaler(; feature_range=(0.0, 1.0))
     if feature_range[1] > feature_range[2]
-        error("Upper bound of feature_range ($(feature_range[2])) must be greater than or equal to the lower bound ($(feature_range[1])).")
+        error(
+            "Upper bound of feature_range ($(feature_range[2])) must be greater than or equal to the lower bound ($(feature_range[1])).",
+        )
     end
     return MinMaxScaler(feature_range)
 end
@@ -74,7 +76,11 @@ function MLJBase.transform(transformer::MinMaxScaler, fitresult, X)
     for (j, name) in enumerate(col_names)
         col_data_abstract = Tables.getcolumn(X, name)
         # Avoid collect if already an AbstractVector to reduce allocations
-        col_vector = col_data_abstract isa AbstractVector ? col_data_abstract : collect(col_data_abstract)
+        col_vector = if col_data_abstract isa AbstractVector
+            col_data_abstract
+        else
+            collect(col_data_abstract)
+        end
 
         current_data_min = data_mins[j]
         current_data_max = data_maxs[j]
@@ -89,7 +95,8 @@ function MLJBase.transform(transformer::MinMaxScaler, fitresult, X)
             inv_data_range = 1.0 / data_range
             for i in eachindex(col_vector)
                 # Standardise to [0,1] then scale to feature_range
-                scaled_col_vector[i] = (col_vector[i] - current_data_min) * inv_data_range * f_scale + f_min
+                scaled_col_vector[i] =
+                    (col_vector[i] - current_data_min) * inv_data_range * f_scale + f_min
             end
         end
 
@@ -99,7 +106,6 @@ function MLJBase.transform(transformer::MinMaxScaler, fitresult, X)
     named_tuple_data = NamedTuple{Tuple(col_names)}(Tuple(scaled_columns))
     output_table = MLJBase.table(named_tuple_data)
     return output_table
-
 end
 
 # inverse_transform method: reverses the scaling
@@ -115,7 +121,11 @@ function MLJBase.inverse_transform(transformer::MinMaxScaler, fitresult, Xscaled
 
     for (j, name) in enumerate(col_names)
         scaled_col_data_abstract = Tables.getcolumn(Xscaled, name)
-        scaled_col_vector = scaled_col_data_abstract isa AbstractVector ? scaled_col_data_abstract : collect(scaled_col_data_abstract)
+        scaled_col_vector = if scaled_col_data_abstract isa AbstractVector
+            scaled_col_data_abstract
+        else
+            collect(scaled_col_data_abstract)
+        end
 
         current_data_min = data_mins[j]
         current_data_max = data_maxs[j]
@@ -178,7 +188,9 @@ end
 # Keyword constructor
 function QuantileTransformer(; feature_range=(0.0, 1.0))
     if feature_range[1] > feature_range[2]
-        error("Upper bound of feature_range ($(feature_range[2])) must be greater than or equal to the lower bound ($(feature_range[1])).")
+        error(
+            "Upper bound of feature_range ($(feature_range[2])) must be greater than or equal to the lower bound ($(feature_range[1])).",
+        )
     end
     return QuantileTransformer(feature_range)
 end
@@ -190,7 +202,9 @@ function MLJBase.fit(transformer::QuantileTransformer, verbosity::Int, X)
     for name in col_names
         col_data = Tables.getcolumn(X, name)
         # Convert to an iterable collection if it's not already one (e.g. a generator) and ensure elements are numbers.
-        col_iterable = collect(eltype(col_data) <: AbstractFloat ? col_data : float.(col_data))
+        col_iterable = collect(
+            eltype(col_data) <: AbstractFloat ? col_data : float.(col_data)
+        )
         # Filter non-finite values
         numeric_col_data = filter(isfinite, col_iterable)
 
@@ -222,11 +236,17 @@ function MLJBase.transform(transformer::QuantileTransformer, fitresult, Xnew)
     for (j, name) in enumerate(Xnew_col_names)
         col_data_abstract = Tables.getcolumn(Xnew, name)
         # Avoid collect if already an AbstractVector
-        col_vector = col_data_abstract isa AbstractVector ? col_data_abstract : collect(col_data_abstract)
+        col_vector = if col_data_abstract isa AbstractVector
+            col_data_abstract
+        else
+            collect(col_data_abstract)
+        end
 
         # Ensure fitresult.quantiles_list has an entry for j
         if j > length(fitresult.quantiles_list)
-            error("Mismatch in column count or order compared to fit data for column: $name")
+            error(
+                "Mismatch in column count or order compared to fit data for column: $name"
+            )
         end
         current_quantiles = fitresult.quantiles_list[j]
         n_quantiles = length(current_quantiles)
@@ -275,7 +295,7 @@ function MLJBase.transform(transformer::QuantileTransformer, fitresult, Xnew)
                     if val == q_i # Value falls exactly on a quantile
                         p = p_i
                     else # Interpolate between q_i and q_i_plus_1
-                        q_i_plus_1 = current_quantiles[idx+1]
+                        q_i_plus_1 = current_quantiles[idx + 1]
                         p_i_plus_1 = idx * inv_n_quantiles_minus_1
 
                         denominator = q_i_plus_1 - q_i
@@ -292,7 +312,9 @@ function MLJBase.transform(transformer::QuantileTransformer, fitresult, Xnew)
     # Reconstruct the table with the original column names from fitting
     output_col_names = fitresult.col_names
     if length(transformed_cols) != length(output_col_names)
-        error("Internal error: Number of transformed columns does not match number of fitted column names.")
+        error(
+            "Internal error: Number of transformed columns does not match number of fitted column names.",
+        )
     end
 
     named_tuple_data = NamedTuple{Tuple(Symbol.(output_col_names))}(Tuple(transformed_cols))
@@ -300,7 +322,9 @@ function MLJBase.transform(transformer::QuantileTransformer, fitresult, Xnew)
     return output_table
 end
 
-function MLJBase.inverse_transform(transformer::QuantileTransformer, fitresult, Xtransformed)
+function MLJBase.inverse_transform(
+    transformer::QuantileTransformer, fitresult, Xtransformed
+)
     Xtransformed_col_names = Tables.columnnames(Xtransformed)
     if Xtransformed_col_names != fitresult.col_names
         error("Column names in Xtransformed do not match column names from fitting.")
@@ -316,10 +340,16 @@ function MLJBase.inverse_transform(transformer::QuantileTransformer, fitresult, 
     for (j, name) in enumerate(Xtransformed_col_names)
         col_data_abstract = Tables.getcolumn(Xtransformed, name)
         # Avoid collect if already an AbstractVector
-        col_vector = col_data_abstract isa AbstractVector ? col_data_abstract : collect(col_data_abstract)
+        col_vector = if col_data_abstract isa AbstractVector
+            col_data_abstract
+        else
+            collect(col_data_abstract)
+        end
 
         if j > length(fitresult.quantiles_list)
-            error("Mismatch in column count or order for inverse_transform for column: $name")
+            error(
+                "Mismatch in column count or order for inverse_transform for column: $name"
+            )
         end
         current_quantiles = fitresult.quantiles_list[j]
         n_quantiles = length(current_quantiles)
@@ -373,7 +403,9 @@ function MLJBase.inverse_transform(transformer::QuantileTransformer, fitresult, 
 
     output_col_names = fitresult.col_names
     if length(original_cols) != length(output_col_names)
-        error("Internal error: Number of inverse_transformed columns does not match number of fitted column names.")
+        error(
+            "Internal error: Number of inverse_transformed columns does not match number of fitted column names.",
+        )
     end
 
     named_tuple_data = NamedTuple{Tuple(Symbol.(output_col_names))}(Tuple(original_cols))

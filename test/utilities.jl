@@ -8,7 +8,7 @@ using Statistics
 X_table = (
     a=[1.0, 2.0, 3.0, 4.0, 5.0],
     b=[5.0, 4.0, 3.0, 2.0, 1.0],
-    c=[10.0, 20.0, 30.0, 40.0, 50.0]
+    c=[10.0, 20.0, 30.0, 40.0, 50.0],
 )
 X = MLJBase.table(X_table)
 
@@ -68,7 +68,7 @@ X = MLJBase.table(X_table)
         X_transformed = transform(mach, X_const)
 
         a_transformed = Tables.getcolumn(X_transformed, :a)
-        @test all(a_transformed .≈ fmin) 
+        @test all(a_transformed .≈ fmin)
 
         b_transformed = Tables.getcolumn(X_transformed, :b)
         @test minimum(b_transformed) ≈ fmin atol=1e-9
@@ -92,7 +92,7 @@ X = MLJBase.table(X_table)
 
         for col_name in Tables.columnnames(X_transformed)
             col_data = Tables.getcolumn(X_transformed, col_name)
-            @test all(col_data .≈ fmin) 
+            @test all(col_data .≈ fmin)
         end
     end
 
@@ -118,7 +118,6 @@ X = MLJBase.table(X_table)
         b_restored = Tables.getcolumn(X_restored, :b)
         @test all(isnan, b_restored)
     end
-
 end
 
 # QuantileTransformer tests
@@ -127,7 +126,7 @@ end
     X_qt_table = (
         a=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
         b=[10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0],
-        c=[1.0, 1.0, 1.0, 5.0, 5.0, 5.0, 10.0, 10.0, 10.0, 10.0] # Includes ties
+        c=[1.0, 1.0, 1.0, 5.0, 5.0, 5.0, 10.0, 10.0, 10.0, 10.0], # Includes ties
     )
     X_qt = MLJBase.table(X_qt_table)
 
@@ -200,7 +199,7 @@ end
 
         a_transformed = Tables.getcolumn(X_transformed, :a)
         # For a constant column, all ranks should be 0.5 (mid-point), then scaled to feature_range
-        @test all(a_transformed .≈ 0.5 * (fmax - fmin) + fmin) 
+        @test all(a_transformed .≈ 0.5 * (fmax - fmin) + fmin)
 
         b_transformed = Tables.getcolumn(X_transformed, :b)
         expected_b_ranks = [0.0, 0.5, 1.0]
@@ -289,9 +288,12 @@ end
 
         X_transformed_correct = transform(mach, X_qt)
         # Create a table with transformed data but wrong names for inverse_transform
-        X_transformed_wrong_names_table = (x1=Tables.getcolumn(X_transformed_correct, :a), x2=Tables.getcolumn(X_transformed_correct, :b), x3=Tables.getcolumn(X_transformed_correct, :c))
+        X_transformed_wrong_names_table = (
+            x1=Tables.getcolumn(X_transformed_correct, :a),
+            x2=Tables.getcolumn(X_transformed_correct, :b),
+            x3=Tables.getcolumn(X_transformed_correct, :c),
+        )
         X_transformed_wrong_names = MLJBase.table(X_transformed_wrong_names_table)
         @test_throws ErrorException inverse_transform(mach, X_transformed_wrong_names)
     end
-
 end

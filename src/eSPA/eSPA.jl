@@ -82,7 +82,8 @@ Constructor for the `eSPA` model.
 - `verbose::Bool`: Enable verbose output during fitting. Default: `false`.
 - `debug_loss::Bool`: Enable loss increase checks after each substep. Default: `false`.
 """
-function eSPA(; K::Int=10,
+function eSPA(;
+    K::Int=10,
     epsC::Float64=1e-3,
     epsW::Float64=1e-3,
     kpp_init::Bool=true,
@@ -93,8 +94,22 @@ function eSPA(; K::Int=10,
     tol::Float64=1e-8,
     random_state=123, # Default seed
     verbose::Bool=false,
-    debug_loss::Bool=false)
-    return eSPA(K, epsC, epsW, kpp_init, iterative_pred, unbias, mi_init, max_iter, tol, random_state, verbose, debug_loss)
+    debug_loss::Bool=false,
+)
+    return eSPA(
+        K,
+        epsC,
+        epsW,
+        kpp_init,
+        iterative_pred,
+        unbias,
+        mi_init,
+        max_iter,
+        tol,
+        random_state,
+        verbose,
+        debug_loss,
+    )
 end
 
 # Fit Result Structure
@@ -116,21 +131,26 @@ _get_rng(random_state::Int) = MersenneTwister(random_state)
 _get_rng(random_state::AbstractRNG) = random_state
 
 # Helper function for debug loss checks
-function _debug_check_loss_substep(loss_before::Float64, loss_after::Float64,
-    step_name::String, iteration::Int,
-    tolerance_threshold::Float64)
+function _debug_check_loss_substep(
+    loss_before::Float64,
+    loss_after::Float64,
+    step_name::String,
+    iteration::Int,
+    tolerance_threshold::Float64,
+)
     if loss_after > loss_before + tolerance_threshold
-        println("Warning: Loss increase after $step_name at iter $iteration: $loss_before -> $loss_after (diff: $(loss_after - loss_before))")
+        println(
+            "Warning: Loss increase after $step_name at iter $iteration: $loss_before -> $loss_after (diff: $(loss_after - loss_before))",
+        )
     end
 end
 
 # MLJ Interface
 function MMI.fit(model::eSPA, verbosity::Int, X, y)
-
     rng = _get_rng(model.random_state)
     to = TimerOutput()
 
-    X_mat = MMI.matrix(X, transpose=true)
+    X_mat = MMI.matrix(X; transpose=true)
     D_features, T_instances = size(X_mat)
 
     classes = MMI.classes(y[1])
@@ -145,7 +165,9 @@ function MMI.fit(model::eSPA, verbosity::Int, X, y)
     end
 
     # --- Initialization ---
-    C, W, L, G = initialise(model, X_mat, Pi_mat, D_features, T_instances, M_classes, rng=rng)
+    C, W, L, G = initialise(
+        model, X_mat, Pi_mat, D_features, T_instances, M_classes; rng=rng
+    )
 
     K_current_ref = Ref(K_current_val)
 
@@ -167,21 +189,59 @@ function MMI.fit(model::eSPA, verbosity::Int, X, y)
         end
 
         loss_at_iter_start = if model.debug_loss && K_current_ref[] > 0
-            @timeit to "calc_loss" calc_loss(X_mat, Pi_mat, C_, W_, L_, G_, model.epsC, model.epsW, K_current_ref[], T_instances)
+            @timeit to "calc_loss" calc_loss(
+                X_mat,
+                Pi_mat,
+                C_,
+                W_,
+                L_,
+                G_,
+                model.epsC,
+                model.epsW,
+                K_current_ref[],
+                T_instances,
+            )
         else
             0.0 # Dummy value, not used if debug_loss is false
         end
 
         # 1. Update G and Remove Empty Clusters
         @timeit to "update_G!" begin
-            G_ = update_G!(X_mat, C_, W_, L_, Pi_mat, model.epsC, K_current_ref[], T_instances, W_metric)
+            G_ = update_G!(
+                X_mat,
+                C_,
+                W_,
+                L_,
+                Pi_mat,
+                model.epsC,
+                K_current_ref[],
+                T_instances,
+                W_metric,
+            )
         end
         @timeit to "remove_empty" begin
             C_, L_, G_ = remove_empty(C_, L_, G_, K_current_ref)
         end
         if model.debug_loss && K_current_ref[] > 0
-            loss_after_G = @timeit to "calc_loss" calc_loss(X_mat, Pi_mat, C_, W_, L_, G_, model.epsC, model.epsW, K_current_ref[], T_instances)
-            _debug_check_loss_substep(loss_at_iter_start, loss_after_G, "G update/remove_empty", i, debug_tol_threshold)
+            loss_after_G = @timeit to "calc_loss" calc_loss(
+                X_mat,
+                Pi_mat,
+                C_,
+                W_,
+                L_,
+                G_,
+                model.epsC,
+                model.epsW,
+                K_current_ref[],
+                T_instances,
+            )
+            _debug_check_loss_substep(
+                loss_at_iter_start,
+                loss_after_G,
+                "G update/remove_empty",
+                i,
+                debug_tol_threshold,
+            )
             loss_at_iter_start = loss_after_G # Update baseline for next substep
         end
 
@@ -192,7 +252,18 @@ function MMI.fit(model::eSPA, verbosity::Int, X, y)
             end
             iterations_run = i
             if K_current_ref[] > 0
-                losses[i] = @timeit to "calc_loss" calc_loss(X_mat, Pi_mat, C_, W_, L_, G_, model.epsC, model.epsW, K_current_ref[], T_instances)
+                losses[i] = @timeit to "calc_loss" calc_loss(
+                    X_mat,
+                    Pi_mat,
+                    C_,
+                    W_,
+                    L_,
+                    G_,
+                    model.epsC,
+                    model.epsW,
+                    K_current_ref[],
+                    T_instances,
+                )
             else
                 losses[i] = Inf
             end
@@ -205,8 +276,21 @@ function MMI.fit(model::eSPA, verbosity::Int, X, y)
             W_metric = WeightedSqEuclidean(W_) # CRITICAL: Update W_metric immediately after W_ changes
         end
         if model.debug_loss && K_current_ref[] > 0
-            loss_after_W = @timeit to "calc_loss" calc_loss(X_mat, Pi_mat, C_, W_, L_, G_, model.epsC, model.epsW, K_current_ref[], T_instances)
-            _debug_check_loss_substep(loss_at_iter_start, loss_after_W, "W update", i, debug_tol_threshold)
+            loss_after_W = @timeit to "calc_loss" calc_loss(
+                X_mat,
+                Pi_mat,
+                C_,
+                W_,
+                L_,
+                G_,
+                model.epsC,
+                model.epsW,
+                K_current_ref[],
+                T_instances,
+            )
+            _debug_check_loss_substep(
+                loss_at_iter_start, loss_after_W, "W update", i, debug_tol_threshold
+            )
             loss_at_iter_start = loss_after_W
         end
 
@@ -215,8 +299,21 @@ function MMI.fit(model::eSPA, verbosity::Int, X, y)
             update_C!(C_, X_mat, G_, K_current_ref[])
         end
         if model.debug_loss && K_current_ref[] > 0
-            loss_after_C = @timeit to "calc_loss" calc_loss(X_mat, Pi_mat, C_, W_, L_, G_, model.epsC, model.epsW, K_current_ref[], T_instances)
-            _debug_check_loss_substep(loss_at_iter_start, loss_after_C, "C update", i, debug_tol_threshold)
+            loss_after_C = @timeit to "calc_loss" calc_loss(
+                X_mat,
+                Pi_mat,
+                C_,
+                W_,
+                L_,
+                G_,
+                model.epsC,
+                model.epsW,
+                K_current_ref[],
+                T_instances,
+            )
+            _debug_check_loss_substep(
+                loss_at_iter_start, loss_after_C, "C update", i, debug_tol_threshold
+            )
             loss_at_iter_start = loss_after_C
         end
 
@@ -225,29 +322,59 @@ function MMI.fit(model::eSPA, verbosity::Int, X, y)
             update_L!(L_, Pi_mat, G_, K_current_ref[], M_classes)
         end
         if model.debug_loss && K_current_ref[] > 0
-            loss_after_L = @timeit to "calc_loss" calc_loss(X_mat, Pi_mat, C_, W_, L_, G_, model.epsC, model.epsW, K_current_ref[], T_instances)
-            _debug_check_loss_substep(loss_at_iter_start, loss_after_L, "L update", i, debug_tol_threshold)
+            loss_after_L = @timeit to "calc_loss" calc_loss(
+                X_mat,
+                Pi_mat,
+                C_,
+                W_,
+                L_,
+                G_,
+                model.epsC,
+                model.epsW,
+                K_current_ref[],
+                T_instances,
+            )
+            _debug_check_loss_substep(
+                loss_at_iter_start, loss_after_L, "L update", i, debug_tol_threshold
+            )
         end
 
         # Calculate and store overall loss for this iteration
-        current_iter_loss = @timeit to "calc_loss" calc_loss(X_mat, Pi_mat, C_, W_, L_, G_, model.epsC, model.epsW, K_current_ref[], T_instances)
+        current_iter_loss = @timeit to "calc_loss" calc_loss(
+            X_mat,
+            Pi_mat,
+            C_,
+            W_,
+            L_,
+            G_,
+            model.epsC,
+            model.epsW,
+            K_current_ref[],
+            T_instances,
+        )
         losses[i] = current_iter_loss
 
         # Verbose output for overall loss change
         if model.verbose && verbosity >= 2 && i > 1
-            if losses[i-1] - current_iter_loss < -model.tol # Check for significant increase from previous iteration's final loss
-                println("Warning: Overall loss increase at iter $i: $(losses[i-1]) -> $(current_iter_loss)")
+            if losses[i - 1] - current_iter_loss < -model.tol # Check for significant increase from previous iteration's final loss
+                println(
+                    "Warning: Overall loss increase at iter $i: $(losses[i-1]) -> $(current_iter_loss)",
+                )
             end
         end
 
         # Convergence Check
         converged_this_iter = false
         if i > 1
-            if abs(losses[i-1] - current_iter_loss) < model.tol
+            if abs(losses[i - 1] - current_iter_loss) < model.tol
                 converged_this_iter = true
             end
             # If K=0, initial_loss might be Inf. Convergence can occur if K becomes 0 during loop.
-        elseif i == 1 && (current_iter_loss == -Inf || (K_current_ref[] == 0 && initial_loss == Inf) || (K_current_ref[] == 0 && T_instances == 0))
+        elseif i == 1 && (
+            current_iter_loss == -Inf ||
+            (K_current_ref[] == 0 && initial_loss == Inf) ||
+            (K_current_ref[] == 0 && T_instances == 0)
+        )
             converged_this_iter = true
         end
 
@@ -270,16 +397,46 @@ function MMI.fit(model::eSPA, verbosity::Int, X, y)
 
         loss_before_unbias = 0.0
         if model.debug_loss
-            loss_before_unbias = @timeit to "calc_loss" calc_loss(X_mat, Pi_mat, C_, W_, L_, G_, model.epsC, model.epsW, K_current_ref[], T_instances)
+            loss_before_unbias = @timeit to "calc_loss" calc_loss(
+                X_mat,
+                Pi_mat,
+                C_,
+                W_,
+                L_,
+                G_,
+                model.epsC,
+                model.epsW,
+                K_current_ref[],
+                T_instances,
+            )
         end
 
         # Unbias G (W_metric here uses the W_ from the end of the main loop)
         @timeit to "update_G!" begin
-            G_ = update_G!(X_mat, C_, W_, L_, Pi_mat, temp_epsC, K_current_ref[], T_instances, W_metric)
+            G_ = update_G!(
+                X_mat, C_, W_, L_, Pi_mat, temp_epsC, K_current_ref[], T_instances, W_metric
+            )
         end
         if model.debug_loss
-            loss_after_unbias_G = @timeit to "calc_loss" calc_loss(X_mat, Pi_mat, C_, W_, L_, G_, model.epsC, model.epsW, K_current_ref[], T_instances)
-            _debug_check_loss_substep(loss_before_unbias, loss_after_unbias_G, "G update (unbias)", iterations_run + 1, debug_tol_threshold)
+            loss_after_unbias_G = @timeit to "calc_loss" calc_loss(
+                X_mat,
+                Pi_mat,
+                C_,
+                W_,
+                L_,
+                G_,
+                model.epsC,
+                model.epsW,
+                K_current_ref[],
+                T_instances,
+            )
+            _debug_check_loss_substep(
+                loss_before_unbias,
+                loss_after_unbias_G,
+                "G update (unbias)",
+                iterations_run + 1,
+                debug_tol_threshold,
+            )
             loss_before_unbias = loss_after_unbias_G # Update baseline
         end
 
@@ -288,8 +445,25 @@ function MMI.fit(model::eSPA, verbosity::Int, X, y)
             update_L!(L_, Pi_mat, G_, K_current_ref[], M_classes)
         end
         if model.debug_loss
-            loss_after_unbias_L = @timeit to "calc_loss" calc_loss(X_mat, Pi_mat, C_, W_, L_, G_, model.epsC, model.epsW, K_current_ref[], T_instances)
-            _debug_check_loss_substep(loss_before_unbias, loss_after_unbias_L, "L update (unbias)", iterations_run + 1, debug_tol_threshold)
+            loss_after_unbias_L = @timeit to "calc_loss" calc_loss(
+                X_mat,
+                Pi_mat,
+                C_,
+                W_,
+                L_,
+                G_,
+                model.epsC,
+                model.epsW,
+                K_current_ref[],
+                T_instances,
+            )
+            _debug_check_loss_substep(
+                loss_before_unbias,
+                loss_after_unbias_L,
+                "L update (unbias)",
+                iterations_run + 1,
+                debug_tol_threshold,
+            )
         end
     end
 
@@ -302,17 +476,29 @@ function MMI.fit(model::eSPA, verbosity::Int, X, y)
             final_losses_to_report = [initial_loss]
         end
         # Add other edge cases if iterations_run is 0 but initial_loss was computed (e.g. K=0 from start)
-    elseif iterations_run == 0 && initial_loss != Inf && (model.debug_loss || model.max_iter > 0) # model.max_iter condition from _initialize
+    elseif iterations_run == 0 &&
+        initial_loss != Inf &&
+        (model.debug_loss || model.max_iter > 0) # model.max_iter condition from _initialize
         final_losses_to_report = [initial_loss]
     end
 
-
-    fitresult = eSPAFitResult(C_, W_, L_, K_current_ref[], classes, model.epsC, model.max_iter, model.tol, model.verbose)
+    fitresult = eSPAFitResult(
+        C_,
+        W_,
+        L_,
+        K_current_ref[],
+        classes,
+        model.epsC,
+        model.max_iter,
+        model.tol,
+        model.verbose,
+    )
     cache = nothing
-    report = (iterations=iterations_run,
+    report = (
+        iterations=iterations_run,
         final_K=K_current_ref[],
         losses=final_losses_to_report,
-        timings=to
+        timings=to,
     )
 
     if model.verbose && verbosity >= 1
@@ -320,13 +506,16 @@ function MMI.fit(model::eSPA, verbosity::Int, X, y)
     end
 
     return (fitresult, cache, report)
-
 end
 
 # TODO: move this to core.jl
-function _predict_proba_internal(X_new_mat_T::AbstractMatrix{Float64}, fr::eSPAFitResult, model::eSPA, to_predict::TimerOutput)
+function _predict_proba_internal(
+    X_new_mat_T::AbstractMatrix{Float64},
+    fr::eSPAFitResult,
+    model::eSPA,
+    to_predict::TimerOutput,
+)
     @timeit to_predict "_predict_proba_internal" begin
-
         D_features, T_new_samples = size(X_new_mat_T)
 
         C_ = fr.C_
@@ -336,7 +525,8 @@ function _predict_proba_internal(X_new_mat_T::AbstractMatrix{Float64}, fr::eSPAF
 
         if K_final == 0 || T_new_samples == 0
             M_classes = size(L_, 1)
-            num_actual_classes = isempty(fr.classes_) ? (M_classes > 0 ? M_classes : 1) : length(fr.classes_)
+            num_actual_classes =
+                isempty(fr.classes_) ? (M_classes > 0 ? M_classes : 1) : length(fr.classes_)
             if num_actual_classes == 0
                 num_actual_classes = 1
             end
@@ -348,7 +538,9 @@ function _predict_proba_internal(X_new_mat_T::AbstractMatrix{Float64}, fr::eSPAF
 
         G_new = spzeros(Bool, K_final, T_new_samples)
         if T_new_samples > 0 && K_final > 0
-            G_new = sparse(ones(Int, T_new_samples), 1:T_new_samples, true, K_final, T_new_samples)
+            G_new = sparse(
+                ones(Int, T_new_samples), 1:T_new_samples, true, K_final, T_new_samples
+            )
             assign_closest!(G_new, Dist_term_G_new)
         end
 
@@ -373,7 +565,13 @@ function _predict_proba_internal(X_new_mat_T::AbstractMatrix{Float64}, fr::eSPAF
                 G_values_test = Dist_term_G_test .- Class_term_G_test
 
                 if T_new_samples > 0 && K_final > 0
-                    G_new_updated = sparse(ones(Int, T_new_samples), 1:T_new_samples, true, K_final, T_new_samples)
+                    G_new_updated = sparse(
+                        ones(Int, T_new_samples),
+                        1:T_new_samples,
+                        true,
+                        K_final,
+                        T_new_samples,
+                    )
                     assign_closest!(G_new_updated, G_values_test)
                     G_new = G_new_updated
                 else
@@ -386,16 +584,22 @@ function _predict_proba_internal(X_new_mat_T::AbstractMatrix{Float64}, fr::eSPAF
                 end
 
                 G_new_structure = findnz(G_new)
-                if G_new_structure[1] == G_old_structure[1] && G_new_structure[2] == G_old_structure[2]
+                if G_new_structure[1] == G_old_structure[1] &&
+                    G_new_structure[2] == G_old_structure[2]
                     # Check verbosity before printing for iterative predict
                     # Using model.verbose directly, as verbosity argument is for fit's main control
                     if model.verbose && iter_verbose && verbosity >= 2
-                        println("\tIterative predict_proba converged in $iter_idx iterations.")
+                        println(
+                            "\tIterative predict_proba converged in $iter_idx iterations."
+                        )
                     end
                     break
                 end
 
-                if model.verbose && iter_verbose && verbosity >= 2 && iter_idx == iter_max_iter
+                if model.verbose &&
+                    iter_verbose &&
+                    verbosity >= 2 &&
+                    iter_idx == iter_max_iter
                     println("\tIterative predict_proba reached max_iter.")
                 end
             end
@@ -411,7 +615,6 @@ function MMI.predict_proba(model::eSPA, fitresult::eSPAFitResult, Xnew)
     # Pass model.verbose to internal predict for its own verbose flags if needed
     # The verbosity parameter here is from MLJ, usually for controlling MLJ's own messages.
     @timeit to_predict "predict_proba" begin
-
         Xnew_mat_T = MMI.matrix(Xnew)'
         probabilities_T = _predict_proba_internal(Xnew_mat_T, fitresult, model, to_predict)
         probabilities = collect(probabilities_T')
@@ -420,9 +623,12 @@ function MMI.predict_proba(model::eSPA, fitresult::eSPAFitResult, Xnew)
             println(to_predict)
         end
 
-        if size(probabilities, 2) != length(fitresult.classes_) && !isempty(fitresult.classes_)
+        if size(probabilities, 2) != length(fitresult.classes_) &&
+            !isempty(fitresult.classes_)
             if isempty(fitresult.classes_) && size(probabilities, 2) > 0
-                error("Cannot create UnivariateFinite with no classes defined in fitresult.")
+                error(
+                    "Cannot create UnivariateFinite with no classes defined in fitresult."
+                )
             elseif isempty(fitresult.classes_) && size(probabilities, 2) == 0
                 return UnivariateFinite[]
             end
@@ -432,7 +638,9 @@ function MMI.predict_proba(model::eSPA, fitresult::eSPAFitResult, Xnew)
             return UnivariateFinite[]
         end
 
-        return [UnivariateFinite(fitresult.classes_, probs) for probs in eachrow(probabilities)]
+        return [
+            UnivariateFinite(fitresult.classes_, probs) for probs in eachrow(probabilities)
+        ]
     end
 end
 
@@ -448,13 +656,14 @@ function MMI.predict(model::eSPA, fitresult::eSPAFitResult, Xnew)
     return MMI.mode.(distributions)
 end
 
-
 # MLJ Traits
 MMI.input_scitype(::Type{<:eSPA}) = Table(Continuous)
 MMI.target_scitype(::Type{<:eSPA}) = AbstractVector{<:Finite}
 MMI.load_path(::Type{<:eSPA}) = "EntropicLearning.eSPA.eSPA"
 MMI.supports_weights(::Type{<:eSPA}) = false
-MMI.docstring(::Type{<:eSPA}) = "Julia implementation of eSPA classifier, inspired by entlearn Python package. Uses Clustering.kmeanspp, Distances.jl, sparse G matrix, and TimerOutputs."
+function MMI.docstring(::Type{<:eSPA})
+    "Julia implementation of eSPA classifier, inspired by entlearn Python package. Uses Clustering.kmeanspp, Distances.jl, sparse G matrix, and TimerOutputs."
+end
 MMI.human_name(::Type{<:eSPA}) = "eSPA Classifier"
 MMI.package_name(::Type{<:eSPA}) = "EntropicLearning"
 MMI.package_uuid(::Type{<:eSPA}) = "dummy-uuid-for-eSPA"
