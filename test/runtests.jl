@@ -5,3 +5,5 @@ using Test
     include("common.jl")
     include("eSPA.jl")
 end
+
+include("Aqua.jl")

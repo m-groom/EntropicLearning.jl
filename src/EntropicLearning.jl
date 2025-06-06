@@ -1,11 +1,10 @@
 module EntropicLearning
 
-using SparseArrays
-
 include("utilities/Transformers.jl")
 using .Transformers
 export MinMaxScaler, QuantileTransformer
 
+using SparseArrays
 include("common/functions.jl")
 export safelog,
     entropy,
@@ -21,5 +20,9 @@ export safelog,
     smallest,
     smaller,
     small
+
+include("eSPA/eSPA.jl")
+using .eSPAClassifier
+export eSPA
 
 end # module EntropicLearning

@@ -5,7 +5,7 @@ using MLJModelInterface
 using StatsBase: sample
 using LinearAlgebra
 using Random
-using Distributions: UnivariateFinite, pdf
+# using Distributions: pdf
 using SparseArrays
 using Clustering: initseeds!, KmppAlg, copyseeds!
 using Clustering.Distances: SqEuclidean, WeightedSqEuclidean
@@ -16,12 +16,6 @@ using Statistics: mean, std
 
 # Include common functions
 include("../common/functions.jl")
-
-# Include core eSPA functions
-include("core.jl")
-
-# Include extras
-include("extras.jl")
 
 const MMI = MLJModelInterface
 
@@ -80,9 +74,15 @@ mutable struct eSPA <: MMI.Probabilistic  # TODO: use @mlj_model macro instead
     debug_loss::Bool
 end
 
+# Include core eSPA functions (after struct definition)
+include("core.jl")
+
+# Include extras
+include("extras.jl")
+
 """
-    eSPA(; K=10, epsC=1e-3, epsW=1e-3, kpp_init=false, iterative_pred=false, 
-         unbias=false, mi_init=true, max_iter=200, tol=1e-8, random_state=123, 
+    eSPA(; K=10, epsC=1e-3, epsW=1e-3, kpp_init=false, iterative_pred=false,
+         unbias=false, mi_init=true, max_iter=200, tol=1e-8, random_state=123,
          verbose=false, debug_loss=false)
 
 Constructor for the `eSPA` model.
@@ -640,7 +640,7 @@ function _predict_proba_internal(
     end
 end
 
-function MMI.predict_proba(model::eSPA, fitresult::eSPAFitResult, Xnew)
+function MMI.predict(model::eSPA, fitresult::eSPAFitResult, Xnew)
     to_predict = TimerOutput()
     # Pass model.verbose to internal predict for its own verbose flags if needed
     # The verbosity parameter here is from MLJ, usually for controlling MLJ's own messages.
@@ -674,7 +674,7 @@ function MMI.predict_proba(model::eSPA, fitresult::eSPAFitResult, Xnew)
     end
 end
 
-function MMI.predict(model::eSPA, fitresult::eSPAFitResult, Xnew)
+function MMI.predict_mode(model::eSPA, fitresult::eSPAFitResult, Xnew)
     distributions = MMI.predict_proba(model, fitresult, Xnew)
     if isempty(distributions)
         if !isempty(fitresult.classes_)
