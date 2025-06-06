@@ -2,6 +2,9 @@ using Test
 using Random
 using EntropicLearning
 using LinearAlgebra
+using NearestNeighbors: KDTree, knn, inrange, Chebyshev
+using SpecialFunctions: digamma
+using Statistics: mean, std
 
 # Include the extras module functions
 include("../src/eSPA/extras.jl")
@@ -102,7 +105,8 @@ include("../src/eSPA/extras.jl")
         @testset "single sample MI" begin
             y3 = [0]
             c3 = [0.5]
-            mi3 = compute_mi_cd(c3, y3, 1) # n_neighbors would be min(1, 1-1)=0, but internally k is at least 1 if count > 1
+            # n_neighbors would be min(1, 1-1)=0, but internally k is at least 1 if count > 1
+            mi3 = compute_mi_cd(c3, y3, 1)
 
             # println("Test - Single sample:")
             # println("Estimated MI: $(mi3)")
@@ -121,7 +125,8 @@ include("../src/eSPA/extras.jl")
             # println("Estimated MI: $(mi4)")
             # println("Expected MI: 0.0 (each label has count=1, filtered out)")
 
-            @test mi4 == 0.0 # Should be 0 since each label has only 1 sample (count=1, filtered out)
+            # Should be 0 since each label has only 1 sample (count=1, filtered out)
+            @test mi4 == 0.0
         end
 
         # Test 3: Perfect binary separation
@@ -177,7 +182,8 @@ include("../src/eSPA/extras.jl")
             # println("Estimated MI: $(mi8)")
             # println("Expected MI: 0.0 (label 1 has only 1 sample, gets filtered)")
 
-            @test mi8 == 0.0 # Label 1 has count=1, gets filtered out, only 2 samples from label 0 remain
+            # Label 1 has count=1, gets filtered out, only 2 samples from label 0 remain
+            @test mi8 == 0.0
         end
     end
 
@@ -226,7 +232,8 @@ include("../src/eSPA/extras.jl")
             # println("MI feature 2 (weak corr): $(mi_multi[2])")
             # println("MI feature 3 (independent): $(mi_multi[3])")
 
-            @test mi_multi[1] > mi_multi[2] # Highly correlated should beat weakly correlated
+            # Highly correlated should beat weakly correlated
+            @test mi_multi[1] > mi_multi[2]
             @test mi_multi[1] > mi_multi[3] # Highly correlated should beat independent
             @test mi_multi[1] > 0.1 # Highly correlated should have substantial MI
             @test mi_multi[2] < 0.1 # Weakly correlated should have relatively low MI
@@ -248,7 +255,8 @@ include("../src/eSPA/extras.jl")
             # println("Estimated MI: $(mi_perfect[1])")
             # println("Expected MI: > 0.5 (close to log(2) ≈ 0.693)")
 
-            @test mi_perfect[1] > 0.5 # Should be high MI, approaching log(2) for binary perfect separation
+            # Should be high MI, approaching log(2) for binary perfect separation
+            @test mi_perfect[1] > 0.5
         end
 
         # Test 4: Three classes test
@@ -258,9 +266,12 @@ include("../src/eSPA/extras.jl")
             y_three = zeros(Int, n)
 
             # Create three well-separated groups
-            X_three[1, 1:20] .= randn(Random.MersenneTwister(1), 20) * 0.1 .+ 0.0  # Class 0 around 0
-            X_three[1, 21:40] .= randn(Random.MersenneTwister(2), 20) * 0.1 .+ 1.0 # Class 1 around 1
-            X_three[1, 41:60] .= randn(Random.MersenneTwister(3), 20) * 0.1 .+ 2.0 # Class 2 around 2
+            # Class 0 around 0
+            X_three[1, 1:20] .= randn(Random.MersenneTwister(1), 20) * 0.1 .+ 0.0
+            # Class 1 around 1
+            X_three[1, 21:40] .= randn(Random.MersenneTwister(2), 20) * 0.1 .+ 1.0
+            # Class 2 around 2
+            X_three[1, 41:60] .= randn(Random.MersenneTwister(3), 20) * 0.1 .+ 2.0
 
             y_three[1:20] .= 0
             y_three[21:40] .= 1
@@ -312,7 +323,8 @@ include("../src/eSPA/extras.jl")
             X_empty = zeros(Float64, 1, 0) # 1 feature, 0 samples
             y_empty = Int[]
 
-            # This should handle gracefully - though the function may not be designed for this
+            # This should handle gracefully - though the function may not be designed for
+            # this
             # We expect it to either return empty array or handle the edge case
             try
                 mi_empty = mi_continuous_discrete(
@@ -320,7 +332,8 @@ include("../src/eSPA/extras.jl")
                 )
                 # println("Test - Empty matrix:")
                 # println("MI result: $(mi_empty)")
-                @test length(mi_empty) == 1 # Should return array of length 1 (for 1 feature)
+                # Should return array of length 1 (for 1 feature)
+                @test length(mi_empty) == 1
             catch e
                 println("Test - Empty matrix: Caught expected error: $(typeof(e))")
                 @test true # It's acceptable to throw an error for empty input

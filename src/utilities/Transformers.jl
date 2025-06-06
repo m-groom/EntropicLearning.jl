@@ -28,7 +28,8 @@ end
 function MinMaxScaler(; feature_range=(0.0, 1.0))
     if feature_range[1] > feature_range[2]
         error(
-            "Upper bound of feature_range ($(feature_range[2])) must be greater than or equal to the lower bound ($(feature_range[1])).",
+            "Upper bound of feature_range ($(feature_range[2])) must be greater than or " *
+            "equal to the lower bound ($(feature_range[1])).",
         )
     end
     return MinMaxScaler(feature_range)
@@ -43,7 +44,8 @@ function MLJBase.fit(transformer::MinMaxScaler, verbosity::Int, X)
 
     for name in col_names
         col_data = Tables.getcolumn(X, name)
-        # Convert to an iterable collection if it's not already one (e.g. a generator) and ensure elements are numbers.
+        # Convert to an iterable collection if it's not already one (e.g. a generator) and
+        # ensure elements are numbers.
         col_iterable = collect(col_data)
         if isempty(col_iterable)
             # Handle empty columns: use NaN
@@ -133,11 +135,12 @@ function MLJBase.inverse_transform(transformer::MinMaxScaler, fitresult, Xscaled
 
         restored_col_vector = similar(scaled_col_vector, Float64)
         if data_range == 0.0
-            # If original data column was constant, all values should be current_data_min, regardless of f_scale.
+            # If original data column was constant, all values should be current_data_min.
             restored_col_vector .= current_data_min
         elseif f_scale == 0.0
-            # Original data had a range, but it was scaled to a single point (f_min). All scaled values should ideally be f_min. The unscaled value (0-1 range) is 0. So, restore to current_data_min.
-            restored_col_vector .= current_data_min
+            # Original data had a range, but it was scaled to a single point (f_min).
+            # All scaled values should ideally be f_min. The unscaled value (0-1 range) is 0
+            restored_col_vector .= current_data_min # restore to current_data_min
         else
             # Both data_range and f_scale are non-zero.
             inv_f_scale = 1.0 / f_scale
@@ -167,15 +170,19 @@ end
 """
     QuantileTransformer(; feature_range=(0.0, 1.0))
 
-An unsupervised model for scaling features to be uniformly distributed over a given range, defaulting to [0, 1].
+An unsupervised model for scaling features to be uniformly distributed over a given range,
+defaulting to [0, 1].
 
-For each feature (column) `X_col` in the input data, the transformation maps each feature to a uniform distribution by calculating the empirical cumulative distribution (ECDF) of the training data for that feature. 
-Each value is then mapped to its ECDF value (percentile rank). 
+For each feature (column) `X_col` in the input data, the transformation maps each feature to
+a uniform distribution by calculating the empirical cumulative distribution (ECDF) of the
+training data for that feature. Each value is then mapped to its ECDF value (percentile rank).
 These ranks (ranging from 0 to 1) are then linearly scaled to the specified `feature_range`.
-For out-of-sample data, values smaller than the training minimum are mapped to the lower bound of `feature_range`, and values larger than the training maximum are mapped to the upper bound. 
+For out-of-sample data, values smaller than the training minimum are mapped to the lower
+bound of `feature_range`, and values larger than the training maximum are mapped to the upper bound.
 Interpolation is used for values falling between learned quantile values.
 
-The inverse transformation maps values from `feature_range` back to the original feature's domain using linear interpolation between the quantiles learned during `fit`.
+The inverse transformation maps values from `feature_range` back to the original feature's
+domain using linear interpolation between the quantiles learned during `fit`.
 
 # Hyperparameters
 - `feature_range::Tuple{Float64, Float64}`: The desired range for the transformed data.
@@ -189,7 +196,8 @@ end
 function QuantileTransformer(; feature_range=(0.0, 1.0))
     if feature_range[1] > feature_range[2]
         error(
-            "Upper bound of feature_range ($(feature_range[2])) must be greater than or equal to the lower bound ($(feature_range[1])).",
+            "Upper bound of feature_range ($(feature_range[2])) must be greater than or " *
+            "equal to the lower bound ($(feature_range[1])).",
         )
     end
     return QuantileTransformer(feature_range)
@@ -201,7 +209,7 @@ function MLJBase.fit(transformer::QuantileTransformer, verbosity::Int, X)
 
     for name in col_names
         col_data = Tables.getcolumn(X, name)
-        # Convert to an iterable collection if it's not already one (e.g. a generator) and ensure elements are numbers.
+        # Convert to an iterable collection and ensure elements are numbers.
         col_iterable = collect(
             eltype(col_data) <: AbstractFloat ? col_data : float.(col_data)
         )
@@ -313,7 +321,8 @@ function MLJBase.transform(transformer::QuantileTransformer, fitresult, Xnew)
     output_col_names = fitresult.col_names
     if length(transformed_cols) != length(output_col_names)
         error(
-            "Internal error: Number of transformed columns does not match number of fitted column names.",
+            "Internal error: Number of transformed columns does not match number of " *
+            "fitted column names.",
         )
     end
 
@@ -379,7 +388,8 @@ function MLJBase.inverse_transform(
                 p = clamp(p, 0.0, 1.0) # Ensure p is within [0,1]
 
                 # Interpolate based on p to find the original value from quantiles
-                idx_float = p * n_quantiles_minus_1 + 1.0   # idx_float is the fractional index into the quantiles array
+                # idx_float is the fractional index into the quantiles array
+                idx_float = p * n_quantiles_minus_1 + 1.0
 
                 lower_idx = floor(Int, idx_float)
                 upper_idx = ceil(Int, idx_float)
@@ -404,7 +414,8 @@ function MLJBase.inverse_transform(
     output_col_names = fitresult.col_names
     if length(original_cols) != length(output_col_names)
         error(
-            "Internal error: Number of inverse_transformed columns does not match number of fitted column names.",
+            "Internal error: Number of inverse_transformed columns " *
+            "does not match number of fitted column names.",
         )
     end
 
@@ -415,10 +426,10 @@ end
 
 # MLJ traits
 MLJBase.input_scitype(::Type{<:QuantileTransformer}) = MLJBase.Table(MLJBase.Continuous)
-MLJBase.target_scitype(::Type{<:QuantileTransformer}) = MLJBase.Table(MLJBase.Continuous) # Output of transform
+MLJBase.target_scitype(::Type{<:QuantileTransformer}) = MLJBase.Table(MLJBase.Continuous)
 
 function MLJBase.fitted_params(::QuantileTransformer, fitresult)
     return (quantiles_list=fitresult.quantiles_list, col_names=fitresult.col_names)
 end
 
-end # module Transformers 
+end # module Transformers

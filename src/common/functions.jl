@@ -17,13 +17,14 @@ This helps to avoid errors when `x` (or its elements) are zero or negative.
 - `x::Union{Real, AbstractArray{<:Real}}`: The input value or array of values.
 
 # Keyword Arguments
-- `tol::Real`: The tolerance level. Values of `x` (or its elements) below `tol` will be
-  replaced by `tol` before taking the logarithm. Defaults to `smallest` (which is `eps()`
-  in this context, as defined in `src/common/functions.jl`).
+- `tol::Real`: The tolerance level. Values of `x` (or its elements) below `tol` will
+  be replaced by `tol` before taking the logarithm. Defaults to `smallest` (which is
+  `eps()` in this context, as defined in `src/common/functions.jl`).
 
 # Returns
-- `Real` or `AbstractArray{<:Real}`: The natural logarithm of `max(x, tol)` (or `max.(x, tol)` for arrays).
-  The return type generally matches the input type (scalar or array, preserving array type if possible).
+- `Real` or `AbstractArray{<:Real}`: The natural logarithm of `max(x, tol)` (or
+  `max.(x, tol)` for arrays). The return type generally matches the input type
+  (scalar or array, preserving array type if possible).
 
 """
 safelog(x::Tr; tol::Real=smallest) where {Tr<:Real} = log(max(x, tol))
@@ -60,7 +61,7 @@ function entropy(W::AbstractArray{Tr}; tol::Real=smallest) where {Tr<:Real}
 end
 
 """
-    cross_entropy(A::AbstractArray{T1}, B::AbstractArray{T2}; tol=smallest) where {T1<:Real, T2<:Real}
+    cross_entropy(A::AbstractArray{T1}, B::AbstractArray{T2}; tol=smallest) where {T1<:Real,T2<:Real}
 
 Computes the cross-entropy C(A, B) = -∑ᵢ Aᵢ log(Bᵢ) for two `AbstractArray`s `A` and `B`.
 
@@ -78,8 +79,8 @@ numerical stability. This provides a general implementation for N-dimensional ar
   will be replaced by `tol` before taking the logarithm. Defaults to `smallest`.
 
 # Returns
-- `promote_type(T1, T2, Float64)`: The computed cross-entropy. The type is determined by
-  the element types of `A`, `B`, and `Float64` to ensure precision.
+- `promote_type(T1, T2, Float64)`: The computed cross-entropy. The type is
+  determined by the element types of `A`, `B`, and `Float64` to ensure precision.
 """
 function cross_entropy(
     A::AbstractArray{T1}, B::AbstractArray{T2}; tol::Real=smallest
@@ -309,19 +310,19 @@ right_stochastic!(A::AbstractMatrix{Tr}) where {Tr<:Real} = A ./= sum(A, dims=2)
 
 Computes the softmax function in-place.
 
-For matrix inputs, the softmax is computed column-wise. The result is stored in `G` (if provided),
-and the input `A` (or `b` for vectors) is scaled by `prefactor` *in-place*.
+For matrix inputs, the softmax is computed column-wise. The result is stored in `G`
+(if provided), and the input `A` (or `b` for vectors) is scaled by `prefactor` *in-place*.
 
-For vector inputs, the softmax is computed over the vector elements. The result is stored in `W`
-(if provided), and the input `b` is scaled by `prefactor` *in-place*.
+For vector inputs, the softmax is computed over the vector elements. The result is
+stored in `W` (if provided), and the input `b` is scaled by `prefactor` *in-place*.
 
-If the output argument (`G` or `W`) is not provided, a new array is allocated for it, and the
-input array (`A` or `b`) is still modified in-place before the softmax computation. The newly
-allocated and computed array is then returned.
+If the output argument (`G` or `W`) is not provided, a new array is allocated for it, and
+the input array (`A` or `b`) is still modified in-place before the softmax computation.
+The newly allocated and computed array is then returned.
 
-This function includes robust handling for empty inputs, columns/vectors with all `-Inf` values
-(resulting in a uniform distribution), and cases where the sum of exponentials is zero, `NaN`,
-or `Inf` (also resulting in a uniform distribution).
+This function includes robust handling for empty inputs, columns/vectors with all `-Inf`
+values (resulting in a uniform distribution), and cases where the sum of exponentials is
+zero, `NaN`, or `Inf` (also resulting in a uniform distribution).
 
 # Arguments
 - `G::AbstractMatrix{Tf}`: (Optional) The matrix to store the result for matrix inputs.
@@ -333,13 +334,13 @@ or `Inf` (also resulting in a uniform distribution).
 
 # Keyword Arguments
 - `prefactor::Tf`: A positive scaling factor applied to the input array elements
-  before the `exp` operation. Defaults to `Tf(1.0)`. An `ArgumentError` is thrown if `prefactor`
-  is not positive.
+  before the `exp` operation. Defaults to `Tf(1.0)`. An `ArgumentError` is thrown if
+  `prefactor` is not positive.
 
 # Returns
 - `nothing` if `G` or `W` is provided (results are stored in-place).
-- A new `AbstractMatrix{Tf}` or `AbstractVector{Tf}` containing the softmax result if `G` or `W`
-  is not provided.
+- A new `AbstractMatrix{Tf}` or `AbstractVector{Tf}` containing the softmax result if
+  `G` or `W` is not provided.
 
 # See Also
 - [`softmax`](@ref): Non-mutating version of this function.
@@ -382,7 +383,8 @@ function softmax!(
         # Normalise
         sum_col_G = sum(current_col_G)
 
-        # Handle cases where sum_col_G is zero (all underflowed), negative (should not happen), NaN, or Inf.
+        # Handle cases where sum_col_G is zero (all underflowed), negative (should not
+        # happen), NaN, or Inf.
         if sum_col_G <= eps(Tf) || !isfinite(sum_col_G)
             # Fallback to a uniform distribution for this column.
             current_col_G .= Tf(1.0) / size(A, 1)
@@ -403,7 +405,7 @@ function softmax!(A::AbstractMatrix{Tf}; prefactor::Tf=Tf(1.0)) where {Tf<:Abstr
     return G
 end
 
-# Mutating softmax - vector input 
+# Mutating softmax - vector input
 function softmax!(
     W::AbstractVector{Tf}, b::AbstractVector{Tf}; prefactor::Tf=Tf(1.0)
 ) where {Tf<:AbstractFloat}
@@ -416,7 +418,7 @@ function softmax!(
         return nothing # W is also empty, nothing to do
     end
 
-    # b is modified in place by this operation. 
+    # b is modified in place by this operation.
     b ./= prefactor
 
     max_b = maximum(b)
@@ -436,7 +438,8 @@ function softmax!(
     # Normalise
     sum_W = sum(W)
 
-    # Handle cases where sum_W is zero (all underflowed), negative (should not happen), NaN, or Inf.
+    # Handle cases where sum_W is zero (all underflowed), negative (should not
+    # happen), NaN, or Inf.
     if sum_W <= eps(Tf) || !isfinite(sum_W)
         # Fallback to a uniform distribution.
         W .= Tf(1.0) / length(b)
@@ -478,8 +481,8 @@ of edge cases (empty inputs, `-Inf` values, problematic sums of exponentials).
 
 # Keyword Arguments
 - `prefactor::Tf`: A positive scaling factor applied to a copy of the input array elements
-  before the `exp` operation. Defaults to `Tf(1.0)`. An `ArgumentError` is thrown if `prefactor`
-  is not positive.
+  before the `exp` operation. Defaults to `Tf(1.0)`. An `ArgumentError` is thrown if
+  `prefactor` is not positive.
 
 # Returns
 - `AbstractMatrix{Tf}`: A new matrix containing the column-wise softmax of `A`.
@@ -495,7 +498,7 @@ function softmax(A::AbstractMatrix{Tf}; prefactor::Tf=Tf(1.0)) where {Tf<:Abstra
     return G
 end
 
-# Softmax - vector input 
+# Softmax - vector input
 function softmax(b::AbstractVector{Tf}; prefactor::Tf=Tf(1.0)) where {Tf<:AbstractFloat}
     W = similar(b)
     # Pass a copy of b to softmax! to prevent modifying the original b

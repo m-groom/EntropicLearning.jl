@@ -1,5 +1,5 @@
 using Test
-using EntropicLearning # Or using .Transformers if running from within EntropicLearning.jl package context
+using EntropicLearning
 using MLJBase
 using Tables
 using Statistics
@@ -111,7 +111,7 @@ X = MLJBase.table(X_table)
         @test isnan(fp.max_values_per_feature[2])
         X_transformed = transform(mach, X_empty_col)
         b_transformed = Tables.getcolumn(X_transformed, :b)
-        @test all(isnan, b_transformed) # Behavior for empty columns might need to be explicitly defined if NaN is not desired.
+        @test all(isnan, b_transformed)
 
         # Test inverse transform with NaN fitresults
         X_restored = inverse_transform(mach, X_transformed)
@@ -140,7 +140,7 @@ end
             col_data = Tables.getcolumn(X_transformed, col_name)
             @test minimum(col_data) >= 0.0 - 1e-9
             @test maximum(col_data) <= 1.0 + 1e-9
-            # Check if ranks are somewhat uniformly distributed (harder to test strictly than min/max)
+            # Check if ranks are somewhat uniformly distributed (harder to test strictly)
             # For unique values, ranks should be (i-1)/(n-1)
             # For tied values, interpolation occurs.
             if col_name == :a # Unique values
@@ -198,7 +198,8 @@ end
         X_transformed = transform(mach, X_const)
 
         a_transformed = Tables.getcolumn(X_transformed, :a)
-        # For a constant column, all ranks should be 0.5 (mid-point), then scaled to feature_range
+        # For a constant column, all ranks should be 0.5 (mid-point), then scaled to
+        # feature_range
         @test all(a_transformed .≈ 0.5 * (fmax - fmin) + fmin)
 
         b_transformed = Tables.getcolumn(X_transformed, :b)
@@ -225,18 +226,29 @@ end
         # Values outside fitted range should be clamped to feature_range bounds
         @test Tables.getcolumn(X_transformed, :a)[1] ≈ 0.0 atol=1e-9 # 0.0 < min(X_qt.a)
         @test Tables.getcolumn(X_transformed, :a)[3] ≈ 1.0 atol=1e-9 # 11.0 > max(X_qt.a)
-        @test Tables.getcolumn(X_transformed, :b)[1] ≈ 1.0 atol=1e-9 # 12.0 > max(X_qt.b) -> smallest rank, maps to 1 for reversed
-        @test Tables.getcolumn(X_transformed, :b)[3] ≈ 0.0 atol=1e-9 # -1.0 < min(X_qt.b) -> largest rank, maps to 0 for reversed
+        # 12.0 > max(X_qt.b) -> smallest rank, maps to 1 for reversed
+        @test Tables.getcolumn(X_transformed, :b)[1] ≈ 1.0 atol=1e-9
+        # -1.0 < min(X_qt.b) -> largest rank, maps to 0 for reversed
+        @test Tables.getcolumn(X_transformed, :b)[3] ≈ 0.0 atol=1e-9
 
         # Inverse transform for out-of-sample (especially clamped values)
-        # This tests if values transformed to 0 or 1 are correctly mapped back to the min/max of the *original* fitted quantiles
+        # This tests if values transformed to 0 or 1 are correctly mapped back to the
+        # min/max of the *original* fitted quantiles
         X_restored_new = inverse_transform(mach, X_transformed)
         fit_params = fitted_params(mach)
 
-        @test Tables.getcolumn(X_restored_new, :a)[1] ≈ fit_params.quantiles_list[1][1] atol=1e-9   # Mapped to min of fitted quantiles for 'a'
-        @test Tables.getcolumn(X_restored_new, :a)[3] ≈ fit_params.quantiles_list[1][end] atol=1e-9 # Mapped to max
-        @test Tables.getcolumn(X_restored_new, :b)[3] ≈ fit_params.quantiles_list[2][1] atol=1e-9   # Mapped to min (which is largest original value for 'b')
-        @test Tables.getcolumn(X_restored_new, :b)[1] ≈ fit_params.quantiles_list[2][end] atol=1e-9 # Mapped to max (smallest original for 'b')
+        # Mapped to min of fitted quantiles for 'a'
+        @test Tables.getcolumn(X_restored_new, :a)[1] ≈
+              fit_params.quantiles_list[1][1] atol=1e-9
+        # Mapped to max
+        @test Tables.getcolumn(X_restored_new, :a)[3] ≈
+              fit_params.quantiles_list[1][end] atol=1e-9
+        # Mapped to min (which is largest original value for 'b')
+        @test Tables.getcolumn(X_restored_new, :b)[3] ≈
+              fit_params.quantiles_list[2][1] atol=1e-9
+        # Mapped to max (smallest original for 'b')
+        @test Tables.getcolumn(X_restored_new, :b)[1] ≈
+              fit_params.quantiles_list[2][end] atol=1e-9
     end
 
     @testset "Error for invalid feature_range" begin
@@ -258,7 +270,8 @@ end
         # For column 'b' (empty during fit), transform should map to middle of feature_range
         @test Tables.getcolumn(X_transformed, :b)[1] ≈ 0.5 atol=1e-9
 
-        # Inverse transform of such a column should result in NaN as per current implementation
+        # Inverse transform of such a column should result in NaN as per current
+        # implementation
         X_restored = inverse_transform(mach, X_transformed)
         @test isnan(Tables.getcolumn(X_restored, :b)[1])
     end

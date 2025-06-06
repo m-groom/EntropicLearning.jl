@@ -13,7 +13,9 @@ function initialise(
 ) where {Tf<:AbstractFloat,Ti<:Integer}
     # Get number of clusters
     K_clusters = model.K
-    @assert K_clusters <= T_instances "Number of clusters must be less than or equal to the number of instances"
+    @assert K_clusters <= T_instances (
+        "Number of clusters must be less than or equal to the number of instances"
+    )
 
     # Initialise the centroid matrix
     C = zeros(Tf, D_features, K_clusters)
@@ -56,7 +58,8 @@ function initialise(
         update_L!(L_, Pi_mat, G_, K_current, M_classes)
     end
 
-    initial_loss = if model.max_iter > 0 || model.debug_loss # Calculate if loop will run or debug is on
+    # Calculate if loop will run or debug is on
+    initial_loss = if model.max_iter > 0 || model.debug_loss
         calc_loss(
             X_mat_transposed,
             Pi_mat,
@@ -90,7 +93,8 @@ function update_G!(
     K_clusters, T_instances = size(G)
 
     # Compute the discretisation error term
-    disc_error = fill(Tf(0.0), K_clusters, T_instances)  # disc_error[k, t] = sum_d W[d] × (X[d, t] - C[d, k])^2
+    # disc_error[k, t] = sum_d W[d] × (X[d, t] - C[d, k])^2
+    disc_error = fill(Tf(0.0), K_clusters, T_instances)
     @inbounds for t in 1:T_instances
         for k in 1:K_clusters
             temp = Tf(0.0)  # Cache current value for sum
@@ -103,7 +107,7 @@ function update_G!(
 
     # Compute the classification error term
     logLP = fill(Tf(0.0), K_clusters, T_instances)  # logLP = ε_C × log.(Λ)' × Π
-    LinearAlgebra.BLAS.gemm!('T', 'N', Tf(epsC), safelog(L; tol=eps(Tf)), P, Tf(0.0), logLP) # Ensure type stability
+    LinearAlgebra.BLAS.gemm!('T', 'N', Tf(epsC), safelog(L; tol=eps(Tf)), P, Tf(0.0), logLP)
 
     # Subtract the classification error term from the discretisation error term
     @inbounds @simd for i in eachindex(disc_error)
@@ -173,8 +177,9 @@ function update_C!(
     # Calculate the new centroids
     mul!(C, X, G')  # C = X × Γ'
 
-    # Average over the number of instances in each cluster 
-    C ./= sum(G; dims=2)'   # Clusters are guaranteed to be non-empty if remove_empty has been called first
+    # Average over the number of instances in each cluster
+    # Clusters are guaranteed to be non-empty if remove_empty has been called first
+    C ./= sum(G; dims=2)'
     return nothing
 end
 
@@ -205,7 +210,7 @@ function calc_loss(
     D_features, T_instances = size(X)
 
     # Calculate the discretisation error
-    disc_error = Tf(0.0)        # disc_error = sum_t sum_d sum_k W[d] * (X[d, t] - C[d, k]×Γ[k, t])^2
+    disc_error = Tf(0.0) # = sum_t sum_d sum_k W[d] * (X[d, t] - C[d, k]×Γ[k, t])^2
     @inbounds CG = view(C, :, G.rowval)  # CG = C × Γ
     @inbounds for t in 1:T_instances
         @simd for d in 1:D_features
@@ -215,10 +220,11 @@ function calc_loss(
 
     # Calculate the classification error
     @inbounds LG = view(L, :, G.rowval)   # LG = Λ × Γ
-    class_error = Tf(epsC) * cross_entropy(P, LG; tol=eps(Tf))    # Already includes the minus sign
+
+    class_error = Tf(epsC) * cross_entropy(P, LG; tol=eps(Tf)) # Includes the minus sign
 
     # Calculate the entropy term
-    entr_W = Tf(epsW) * entropy(W; tol=eps(Tf))     # Already includes the minus sign
+    entr_W = Tf(epsW) * entropy(W; tol=eps(Tf))                # Includes the minus sign
 
     # Calculate the loss
     return (disc_error + class_error) / T_instances - entr_W

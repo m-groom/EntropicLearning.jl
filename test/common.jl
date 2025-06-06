@@ -67,7 +67,8 @@ using Statistics # For mean, etc.
         B_v1 = Float32[0.5, 0.5]
         expected_ce_v1 = -(0.25f0*log(0.5f0) + 0.75f0*log(0.5f0))
         @test cross_entropy(A_v1, B_v1) ≈ expected_ce_v1
-        @test typeof(cross_entropy(A_v1, B_v1)) == promote_type(Float32, Float32, Float64) # Accumulator promotes
+        # Accumulator promotes
+        @test typeof(cross_entropy(A_v1, B_v1)) == promote_type(Float32, Float32, Float64)
 
         # 3D Arrays
         A_3d = rand(2, 2, 2);
@@ -160,7 +161,8 @@ using Statistics # For mean, etc.
             3.0 1.0 0.5 1.0
         ]
 
-        # Create a sparse matrix where each column has one 'true' entry (representing one assignment per item)
+        # Create a sparse matrix where each column has one 'true' entry (representing one
+        # assignment per item)
         K, T = size(distances)
         rowval_initial = rand(1:K, T)
         Gamma_sparse_bool = sparse(rowval_initial, 1:T, ones(Bool, T), K, T)
@@ -244,7 +246,8 @@ using Statistics # For mean, etc.
 
     @testset "Softmax Functions Tests" begin
         # Helper function for checking sum-to-one property
-        function check_sum_to_one(M, dim) # dim=1 for columns, dim=2 for rows (not used here, but general)
+        # dim=1 for columns, dim=2 for rows (not used here, but general)
+        function check_sum_to_one(M, dim)
             if ndims(M) == 1
                 return sum(M) ≈ 1.0
             else
@@ -258,9 +261,14 @@ using Statistics # For mean, etc.
             G_f64 = similar(A_f64)
             A_orig_f64 = copy(A_f64)
             @test softmax!(G_f64, A_f64) === nothing
-            @test A_f64 == A_orig_f64 # A is scaled by prefactor=1.0, so effectively unchanged if prefactor not given
-            @test G_f64[:, 1] ≈ [exp(1.0)/(exp(1.0)+exp(0.0)), exp(0.0)/(exp(1.0)+exp(0.0))]
-            @test G_f64[:, 2] ≈ [exp(0.0)/(exp(0.0)+exp(1.0)), exp(1.0)/(exp(0.0)+exp(1.0))]
+            # A is scaled by prefactor=1.0, so effectively unchanged if prefactor not given
+            @test A_f64 == A_orig_f64
+            @test G_f64[:, 1] ≈ [
+                exp(1.0) / (exp(1.0) + exp(0.0)), exp(0.0) / (exp(1.0) + exp(0.0))
+            ]
+            @test G_f64[:, 2] ≈ [
+                exp(0.0) / (exp(0.0) + exp(1.0)), exp(1.0) / (exp(0.0) + exp(1.0))
+            ]
             @test check_sum_to_one(G_f64, 1)
 
             # Basic Float32 with prefactor
@@ -318,7 +326,9 @@ using Statistics # For mean, etc.
             @test softmax!(w_f64, b_f64) === nothing
             @test b_f64 == b_orig_f64 # b is scaled by prefactor=1.0
             norm_factor = exp(1.0) + exp(0.0) + exp(1.0)
-            @test w_f64 ≈ [exp(1.0)/norm_factor, exp(0.0)/norm_factor, exp(1.0)/norm_factor]
+            @test w_f64 ≈ [
+                exp(1.0) / norm_factor, exp(0.0) / norm_factor, exp(1.0) / norm_factor
+            ]
             @test check_sum_to_one(w_f64, 1)
 
             b_f32 = Float32[1.0, 2.0, 3.0]

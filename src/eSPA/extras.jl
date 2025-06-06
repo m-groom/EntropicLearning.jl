@@ -1,25 +1,30 @@
-# This file contains functions that are used in the eSPA module but are not part of the core eSPA algorithm.
+# This file contains functions that are used in the eSPA module but are not part of the
+# core eSPA algorithm.
 
 """
-    compute_mi_cd(c::AbstractVector{Tf}, d::AbstractVector{Ti}, n_neighbors::Int=3) where {Tf<:AbstractFloat, Ti<:Integer}
+    compute_mi_cd(c::AbstractVector{Tf}, d::AbstractVector{Ti}, n_neighbors::Int=3) where {Tf<:AbstractFloat,Ti<:Integer}
 
-Compute mutual information between a continuous variable and a discrete variable using the Ross (2014) estimator.
+Compute mutual information between a continuous variable and a discrete variable using the
+Ross (2014) estimator.
 
-This function implements the k-nearest neighbor based mutual information estimator specifically designed
-for mixed continuous-discrete data. The method uses the Chebyshev (L∞) distance metric and applies
-numerical stability improvements to handle edge cases.
+This function implements the k-nearest neighbor based mutual information estimator
+specifically designed for mixed continuous-discrete data. The method uses the Chebyshev (L∞)
+distance metric and applies numerical stability improvements to handle edge cases.
 
 # Arguments
 - `c::AbstractVector{Tf}`: Samples of a continuous random variable where `Tf<:AbstractFloat`
 - `d::AbstractVector{Ti}`: Samples of a discrete random variable where `Ti<:Integer`
-- `n_neighbors::Int=3`: Number of nearest neighbors to search for within each discrete class.
+- `n_neighbors::Int=3`: Number of nearest neighbors to search for within each discrete
+  class.
   Higher values reduce variance but may introduce bias.
 
 # Returns
-- `mi::Tf`: Estimated mutual information in nat units. Always non-negative (negatives are clipped to 0).
+- `mi::Tf`: Estimated mutual information in nat units. Always non-negative (negatives are
+  clipped to 0).
 
 # References
-- Ross, B. C. "Mutual Information between Discrete and Continuous Data Sets". PLoS ONE 9(2), 2014.
+- Ross, B. C. "Mutual Information between Discrete and Continuous Data Sets". PLoS ONE
+  9(2), 2014.
 """
 function compute_mi_cd(
     c::AbstractVector{Tf}, d::AbstractVector{Ti}, n_neighbors::Int=3
@@ -54,7 +59,8 @@ function compute_mi_cd(
 
             # Find k nearest neighbors for each point in this label group
             for (i, idx) in enumerate(masked_indices)
-                idxs, dists = knn(kdtree, vec(masked_c[i, :]), k + 1)  # k+1 because it includes the point itself
+                # k+1 because it includes the point itself
+                idxs, dists = knn(kdtree, vec(masked_c[i, :]), k + 1)
 
                 # Sort distances to ensure correct ordering
                 sorted_dists = sort(dists)
@@ -110,27 +116,37 @@ function compute_mi_cd(
 end
 
 """
-    mi_continuous_discrete(X::AbstractMatrix{Tf}, y::AbstractVector{Ti}; n_neighbors::Int=3, rng::AbstractRNG=Random.default_rng()) where {Tf<:AbstractFloat, Ti<:Integer}
+    mi_continuous_discrete(
+        X::AbstractMatrix{Tf}, y::AbstractVector{Ti}; n_neighbors::Int=3,
+        rng::AbstractRNG=Random.default_rng()
+    ) where {Tf<:AbstractFloat,Ti<:Integer}
 
-Estimate mutual information between multiple continuous features and a discrete target variable.
+Estimate mutual information between multiple continuous features and a discrete target
+variable.
 
-This function computes mutual information (MI) scores for feature selection in machine learning tasks.
-MI quantifies the statistical dependency between variables - zero indicates independence, while higher
-values indicate stronger dependency. The implementation uses the Ross (2014) estimator designed for
-mixed continuous-discrete data.
+This function computes mutual information (MI) scores for feature selection in machine
+learning tasks. MI quantifies the statistical dependency between variables - zero indicates
+independence, while higher values indicate stronger dependency. The implementation uses the
+Ross (2014) estimator designed for mixed continuous-discrete data.
 
 # Arguments
-- `X::AbstractMatrix{Tf}`: Feature matrix of shape (D, T) where D is the number of features and T is the number of samples
+- `X::AbstractMatrix{Tf}`: Feature matrix of shape (D, T) where D is the number of
+  features and T is the number of samples
 - `y::AbstractVector{Ti}`: Target vector of length T containing discrete class labels
-- `n_neighbors::Int=3`: Number of neighbors for MI estimation. Higher values reduce variance but may introduce bias
-- `rng::AbstractRNG=Random.default_rng()`: Random number generator for reproducible noise addition
+- `n_neighbors::Int=3`: Number of neighbors for MI estimation. Higher values reduce
+  variance but may introduce bias
+- `rng::AbstractRNG=Random.default_rng()`: Random number generator for reproducible
+  noise addition
 
 # Returns
-- `mi::Vector{Tf}`: Mutual information scores for each feature in nat units (always non-negative)
+- `mi::Vector{Tf}`: Mutual information scores for each feature in nat units (always
+  non-negative)
 
 # References
-- Ross, B. C. "Mutual Information between Discrete and Continuous Data Sets". PLoS ONE 9(2), 2014.
-- Kraskov, A., Stögbauer, H. & Grassberger, P. "Estimating mutual information". Phys. Rev. E 69, 066138 (2004).
+- Ross, B. C. "Mutual Information between Discrete and Continuous Data Sets". PLoS ONE
+  9(2), 2014.
+- Kraskov, A., Stögbauer, H. & Grassberger, P. "Estimating mutual information". Phys. Rev.
+  E 69, 066138 (2004).
 """
 function mi_continuous_discrete(
     X::AbstractMatrix{Tf},

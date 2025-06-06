@@ -32,21 +32,38 @@ export eSPA
 
 An Entropic Semisupervised Positive Unlabeled (eSPA) classifier.
 
-This model implements the eSPA algorithm, a clustering-based approach primarily designed for Positive-Unlabeled (PU) learning but adaptable for standard classification. It iteratively refines cluster centroids, feature weights, and class posteriors for clusters to optimize a loss function combining reconstruction error, classification accuracy, and feature weight entropy.
+This model implements the eSPA algorithm, a clustering-based approach primarily designed for
+Positive-Unlabeled (PU) learning but adaptable for standard classification. It iteratively
+refines cluster centroids, feature weights, and class posteriors for clusters to optimize a
+loss function combining reconstruction error, classification accuracy, and feature weight
+entropy.
 
 Fields:
 - `K::Int`: Initial number of clusters to find.
-- `epsC::Float64`: Regularization parameter for the classification term in the loss function. Controls the influence of class labels on cluster assignments.
-- `epsW::Float64`: Regularization parameter for the entropy of feature weights. Encourages smoother/sparser feature weights.
-- `kpp_init::Bool`: If `true`, uses k-means++ for centroid initialization. If `false`, centroids are initialized by randomly selecting data points.
-- `iterative_pred::Bool`: If `true`, performs iterative refinement of assignments during the prediction phase (`predict_proba`).
-- `unbias::Bool`: If `true`, performs an unbiasing step after the main optimization loop to refine class posteriors without the influence of `epsC`.
-- `mi_init::Bool`: If `true`, feature weights `W_` are initialized using the mutural information between features and classes. If `false`, they are initialized randomly and then normalized.
+- `epsC::Float64`: Regularization parameter for the classification term in the loss
+  function.
+  Controls the influence of class labels on cluster assignments.
+- `epsW::Float64`: Regularization parameter for the entropy of feature weights. Encourages
+  smoother/sparser feature weights.
+- `kpp_init::Bool`: If `true`, uses k-means++ for centroid initialization. If `false`,
+  centroids are initialized by randomly selecting data points.
+- `iterative_pred::Bool`: If `true`, performs iterative refinement of assignments during
+  the prediction phase (`predict_proba`).
+- `unbias::Bool`: If `true`, performs an unbiasing step after the main optimization loop to
+  refine class posteriors without the influence of `epsC`.
+- `mi_init::Bool`: If `true`, feature weights `W_` are initialized using the mutural
+  information between features and classes. If `false`, they are initialized randomly and
+  then normalized.
 - `max_iter::Int`: Maximum number of iterations for the main optimization loop.
-- `tol::Float64`: Tolerance for convergence. The algorithm stops if the absolute change in loss between iterations is less than `tol`.
-- `random_state::Any`: Seed or AbstractRNG for random number generation, ensuring reproducibility. Can be an `Int` or an `AbstractRNG` instance.
-- `verbose::Bool`: If `true`, prints progress information during fitting, including iteration number, loss, and convergence status. Also enables printing of `TimerOutputs`.
-- `debug_loss::Bool`: If `true`, performs additional checks after each substep of the algorithm to ensure the loss function does not increase (which is a theoretical property of eSPA). Warnings are printed if an increase is detected.
+- `tol::Float64`: Tolerance for convergence. The algorithm stops if the absolute change
+  in loss between iterations is less than `tol`.
+- `random_state::Any`: Seed or AbstractRNG for random number generation, ensuring
+  reproducibility. Can be an `Int` or an `AbstractRNG` instance.
+- `verbose::Bool`: If `true`, prints progress information during fitting, including
+  iteration number, loss, and convergence status. Also enables printing of `TimerOutputs`.
+- `debug_loss::Bool`: If `true`, performs additional checks after each substep of the
+  algorithm to ensure the loss function does not increase (which is a theoretical property
+  of eSPA). Warnings are printed if an increase is detected.
 """
 mutable struct eSPA <: MMI.Probabilistic  # TODO: use @mlj_model macro instead
     K::Int
@@ -64,7 +81,9 @@ mutable struct eSPA <: MMI.Probabilistic  # TODO: use @mlj_model macro instead
 end
 
 """
-    eSPA(; K=10, epsC=1e-3, epsW=1e-3, kpp_init=false, iterative_pred=false, unbias=false, mi_init=true, max_iter=200, tol=1e-8, random_state=123, verbose=false, debug_loss=false)
+    eSPA(; K=10, epsC=1e-3, epsW=1e-3, kpp_init=false, iterative_pred=false, 
+         unbias=false, mi_init=true, max_iter=200, tol=1e-8, random_state=123, 
+         verbose=false, debug_loss=false)
 
 Constructor for the `eSPA` model.
 
@@ -72,10 +91,13 @@ Constructor for the `eSPA` model.
 - `K::Int`: Initial number of clusters. Default: `10`.
 - `epsC::Float64`: Classification regularization parameter. Default: `1e-3`.
 - `epsW::Float64`: Feature weight entropy regularization parameter. Default: `1e-3`.
-- `kpp_init::Bool`: If `true` (default), use k-means++ for centroid initialization. If `false`, initialize centroids by randomly selecting data points.
-- `iterative_pred::Bool`: Whether to use iterative refinement during prediction. Default: `false`.
+- `kpp_init::Bool`: If `true` (default), use k-means++ for centroid initialization. If
+  `false`, initialize centroids by randomly selecting data points.
+- `iterative_pred::Bool`: Whether to use iterative refinement during prediction.
+  Default: `false`.
 - `unbias::Bool`: Whether to perform an unbiasing step after fitting. Default: `false`.
-- `mi_init::Bool`: If `true` (default), initialize feature weights using the mutural information between features and classes. If `false`, initialize randomly and normalize.
+- `mi_init::Bool`: If `true` (default), initialize feature weights using the mutural
+  information between features and classes. If `false`, initialize randomly and normalize.
 - `max_iter::Int`: Maximum optimization iterations. Default: `200`.
 - `tol::Float64`: Convergence tolerance for the loss function. Default: `1e-8`.
 - `random_state::Any`: Seed or RNG for reproducibility. Default: `123`.
@@ -172,9 +194,11 @@ function MMI.fit(model::eSPA, verbosity::Int, X, y)
     K_current_ref = Ref(K_current_val)
 
     losses = zeros(Float64, model.max_iter)
-    if model.max_iter > 0 && initial_loss != Inf # Store initial loss if loop will run and loss is valid
+    # Store initial loss if loop will run and loss is valid
+    if model.max_iter > 0 && initial_loss != Inf
         losses[1] = initial_loss
-    elseif model.max_iter > 0 # Ensure losses[1] is Inf if not otherwise set and loop runs
+    # Ensure losses[1] is Inf if not otherwise set and loop runs
+    elseif model.max_iter > 0
         losses[1] = Inf
     end
 
@@ -184,7 +208,8 @@ function MMI.fit(model::eSPA, verbosity::Int, X, y)
     # --- Main Optimization Loop ---
     for i in 1:model.max_iter
         if K_current_ref[] == 0
-            iterations_run = i - 1 # Correctly set iterations if loop breaks due to K=0
+            # Correctly set iterations if loop breaks due to K=0
+            iterations_run = i - 1
             break
         end
 
@@ -273,7 +298,8 @@ function MMI.fit(model::eSPA, verbosity::Int, X, y)
         # 2. Update W
         @timeit to "update_W!" begin
             update_W!(W_, X_mat, C_, G_, model.epsW, K_current_ref[], T_instances)
-            W_metric = WeightedSqEuclidean(W_) # CRITICAL: Update W_metric immediately after W_ changes
+            # CRITICAL: Update W_metric immediately after W_ changes
+            W_metric = WeightedSqEuclidean(W_)
         end
         if model.debug_loss && K_current_ref[] > 0
             loss_after_W = @timeit to "calc_loss" calc_loss(
@@ -356,7 +382,8 @@ function MMI.fit(model::eSPA, verbosity::Int, X, y)
 
         # Verbose output for overall loss change
         if model.verbose && verbosity >= 2 && i > 1
-            if losses[i - 1] - current_iter_loss < -model.tol # Check for significant increase from previous iteration's final loss
+            # Check for significant increase from previous iteration's final loss
+            if losses[i - 1] - current_iter_loss < -model.tol
                 println(
                     "Warning: Overall loss increase at iter $i: $(losses[i-1]) -> $(current_iter_loss)",
                 )
@@ -369,7 +396,8 @@ function MMI.fit(model::eSPA, verbosity::Int, X, y)
             if abs(losses[i - 1] - current_iter_loss) < model.tol
                 converged_this_iter = true
             end
-            # If K=0, initial_loss might be Inf. Convergence can occur if K becomes 0 during loop.
+            # If K=0, initial_loss might be Inf. Convergence can occur if K becomes 0 during
+            # loop.
         elseif i == 1 && (
             current_iter_loss == -Inf ||
             (K_current_ref[] == 0 && initial_loss == Inf) ||
@@ -475,7 +503,8 @@ function MMI.fit(model::eSPA, verbosity::Int, X, y)
         if initial_loss != Inf
             final_losses_to_report = [initial_loss]
         end
-        # Add other edge cases if iterations_run is 0 but initial_loss was computed (e.g. K=0 from start)
+        # Add other edge cases if iterations_run is 0 but initial_loss was computed
+        # (e.g. K=0 from start)
     elseif iterations_run == 0 &&
         initial_loss != Inf &&
         (model.debug_loss || model.max_iter > 0) # model.max_iter condition from _initialize
@@ -587,7 +616,8 @@ function _predict_proba_internal(
                 if G_new_structure[1] == G_old_structure[1] &&
                     G_new_structure[2] == G_old_structure[2]
                     # Check verbosity before printing for iterative predict
-                    # Using model.verbose directly, as verbosity argument is for fit's main control
+                    # Using model.verbose directly, as verbosity argument is for fit's main
+                    # control
                     if model.verbose && iter_verbose && verbosity >= 2
                         println(
                             "\tIterative predict_proba converged in $iter_idx iterations."
