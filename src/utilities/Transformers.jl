@@ -1,6 +1,7 @@
 module Transformers
 
-using MLJBase
+using MLJModelInterface
+using MLJBase: table
 using Tables
 using Statistics
 
@@ -20,7 +21,7 @@ For each feature (column) `X_col` in the input data, the transformation is:
 - `feature_range::Tuple{Float64, Float64}`: The desired range for the transformed data.
   Defaults to `(0.0, 1.0)`.
 """
-mutable struct MinMaxScaler <: MLJBase.Unsupervised
+mutable struct MinMaxScaler <: MLJModelInterface.Unsupervised
     feature_range::Tuple{Float64,Float64}
 end
 
@@ -36,7 +37,7 @@ function MinMaxScaler(; feature_range=(0.0, 1.0))
 end
 
 # Fit method: learns min and max for each feature
-function MLJBase.fit(transformer::MinMaxScaler, verbosity::Int, X)
+function MLJModelInterface.fit(transformer::MinMaxScaler, verbosity::Int, X)
     # X is assumed to be a Tables.jl compatible table.
     col_names = Tables.columnnames(X)
     all_mins = Float64[]
@@ -65,7 +66,7 @@ function MLJBase.fit(transformer::MinMaxScaler, verbosity::Int, X)
 end
 
 # transform method: applies the scaling
-function MLJBase.transform(transformer::MinMaxScaler, fitresult, X)
+function MLJModelInterface.transform(transformer::MinMaxScaler, fitresult, X)
     col_names = Tables.columnnames(X)
     data_mins = fitresult.mins
     data_maxs = fitresult.maxs
@@ -106,12 +107,12 @@ function MLJBase.transform(transformer::MinMaxScaler, fitresult, X)
     end
 
     named_tuple_data = NamedTuple{Tuple(col_names)}(Tuple(scaled_columns))
-    output_table = MLJBase.table(named_tuple_data)
+    output_table = table(named_tuple_data)
     return output_table
 end
 
 # inverse_transform method: reverses the scaling
-function MLJBase.inverse_transform(transformer::MinMaxScaler, fitresult, Xscaled)
+function MLJModelInterface.inverse_transform(transformer::MinMaxScaler, fitresult, Xscaled)
     col_names = Tables.columnnames(Xscaled)
     data_mins = fitresult.mins
     data_maxs = fitresult.maxs
@@ -154,16 +155,16 @@ function MLJBase.inverse_transform(transformer::MinMaxScaler, fitresult, Xscaled
     end
 
     named_tuple_data = NamedTuple{Tuple(col_names)}(Tuple(restored_columns))
-    output_table = MLJBase.table(named_tuple_data)
+    output_table = table(named_tuple_data)
     return output_table
 end
 
 # Specify input and output scitypes
-MLJBase.input_scitype(::Type{<:MinMaxScaler}) = MLJBase.Table(MLJBase.Continuous)
-MLJBase.output_scitype(::Type{<:MinMaxScaler}) = MLJBase.Table(MLJBase.Continuous)
+MLJModelInterface.input_scitype(::Type{<:MinMaxScaler}) = MLJModelInterface.Table(MLJModelInterface.Continuous)
+MLJModelInterface.output_scitype(::Type{<:MinMaxScaler}) = MLJModelInterface.Table(MLJModelInterface.Continuous)
 
 # Fitted parameters
-function MLJBase.fitted_params(::MinMaxScaler, fitresult) # TODO: also return names of features that were scaled
+function MLJModelInterface.fitted_params(::MinMaxScaler, fitresult) # TODO: also return names of features that were scaled
     return (min_values_per_feature=fitresult.mins, max_values_per_feature=fitresult.maxs)
 end
 
@@ -188,7 +189,7 @@ domain using linear interpolation between the quantiles learned during `fit`.
 - `feature_range::Tuple{Float64, Float64}`: The desired range for the transformed data.
   Defaults to `(0.0, 1.0)`.
 """
-mutable struct QuantileTransformer <: MLJBase.Unsupervised
+mutable struct QuantileTransformer <: MLJModelInterface.Unsupervised
     feature_range::Tuple{Float64,Float64}
 end
 
@@ -203,7 +204,7 @@ function QuantileTransformer(; feature_range=(0.0, 1.0))
     return QuantileTransformer(feature_range)
 end
 
-function MLJBase.fit(transformer::QuantileTransformer, verbosity::Int, X)
+function MLJModelInterface.fit(transformer::QuantileTransformer, verbosity::Int, X)
     col_names = Tables.columnnames(X)
     quantiles_per_column = Vector{Vector{Float64}}()
 
@@ -230,7 +231,7 @@ function MLJBase.fit(transformer::QuantileTransformer, verbosity::Int, X)
     return fitresult, cache, report
 end
 
-function MLJBase.transform(transformer::QuantileTransformer, fitresult, Xnew)
+function MLJModelInterface.transform(transformer::QuantileTransformer, fitresult, Xnew)
     Xnew_col_names = Tables.columnnames(Xnew)
     if Xnew_col_names != fitresult.col_names
         error("Column names in Xnew do not match column names from fitting.")
@@ -327,11 +328,11 @@ function MLJBase.transform(transformer::QuantileTransformer, fitresult, Xnew)
     end
 
     named_tuple_data = NamedTuple{Tuple(Symbol.(output_col_names))}(Tuple(transformed_cols))
-    output_table = MLJBase.table(named_tuple_data)
+    output_table = table(named_tuple_data)
     return output_table
 end
 
-function MLJBase.inverse_transform(
+function MLJModelInterface.inverse_transform(
     transformer::QuantileTransformer, fitresult, Xtransformed
 )
     Xtransformed_col_names = Tables.columnnames(Xtransformed)
@@ -420,15 +421,15 @@ function MLJBase.inverse_transform(
     end
 
     named_tuple_data = NamedTuple{Tuple(Symbol.(output_col_names))}(Tuple(original_cols))
-    output_table = MLJBase.table(named_tuple_data)
+    output_table = table(named_tuple_data)
     return output_table
 end
 
 # MLJ traits
-MLJBase.input_scitype(::Type{<:QuantileTransformer}) = MLJBase.Table(MLJBase.Continuous)
-MLJBase.target_scitype(::Type{<:QuantileTransformer}) = MLJBase.Table(MLJBase.Continuous)
+MLJModelInterface.input_scitype(::Type{<:QuantileTransformer}) = MLJModelInterface.Table(MLJModelInterface.Continuous)
+MLJModelInterface.target_scitype(::Type{<:QuantileTransformer}) = MLJModelInterface.Table(MLJModelInterface.Continuous)
 
-function MLJBase.fitted_params(::QuantileTransformer, fitresult)
+function MLJModelInterface.fitted_params(::QuantileTransformer, fitresult)
     return (quantiles_list=fitresult.quantiles_list, col_names=fitresult.col_names)
 end
 
