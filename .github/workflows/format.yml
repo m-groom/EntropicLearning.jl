@@ -1,0 +1,13 @@
+name: Format Check
+on: [push, pull_request]
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - uses: julia-actions/setup-julia@v1
+    - name: Install JuliaFormatter
+      run: julia -e 'using Pkg; Pkg.add("JuliaFormatter")'
+    - name: Check formatting
+      run: |
+        julia -e 'using JuliaFormatter; @assert format(".", verbose=true) "Format check failed"'
