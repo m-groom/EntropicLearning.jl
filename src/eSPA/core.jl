@@ -4,7 +4,6 @@
 function initialise(
     model::eSPA,
     X::AbstractMatrix{Tf},
-    P::AbstractMatrix{Tf},
     y::AbstractVector{Ti},
     D_features::Int,
     T_instances::Int,
@@ -17,66 +16,46 @@ function initialise(
         "Number of clusters must be less than or equal to the number of instances"
     )
 
+    # Initialise the feature importance vector
+    W = zeros(Tf, D_features)
+    if model.mi_init
+        # Initialise W[d] using the mutural information between feature d and y
+        @inbounds for d in 1:D_features
+            W[d] = mi_continuous_discrete(view(X, d, :), y; n_neighbors=3, rng=rng)
+        end
+    else
+        rand!(rng, W)
+    end
+    normalise!(W)
+
     # Initialise the centroid matrix
     C = zeros(Tf, D_features, K_clusters)
     if model.kpp_init   # Use k-means++ to initialise the centroids
         iseeds = Vector{Int}(undef, K_clusters)
-        initseeds!(iseeds, KmppAlg(), X, SqEuclidean(); rng=rng)
-        # initseeds!(iseeds, KmppAlg(), X, WeightedSqEuclidean(W), rng=rng)
-
+        if model.mi_init
+            initseeds!(iseeds, KmppAlg(), X, WeightedSqEuclidean(W); rng=rng)
+        else
+            initseeds!(iseeds, KmppAlg(), X, SqEuclidean(); rng=rng)
+        end
     else    # Randomly select K data points as centroids
         iseeds = StatsBase.sample(rng, 1:T_instances, K_clusters; replace=false)
     end
     copyseeds!(C, X, iseeds)
 
-    # Initialise the feature importance vector
-    W_ = zeros(Tf, D_features)
+    # Initialise the conditional probability matrix
+    L = rand(rng, Tf, M_classes, K_clusters)
+    left_stochastic!(L)
 
-    if model.mi_init
-        # Initialise W[d] using the mutural information between feature d and y
-    else
-        rand!(rng, W_)
-        sum_W = sum(W_)
-        if sum_W > eps(Tf)
-            W_ ./= sum_W
-        else
-            fill!(W_, 1.0 / D_features)
-        end
-    end
+    # Initialise the affiliation matrix
+    G = sparse(
+        rand(rng, 1:K_clusters, T_instances),
+        1:T_instances,
+        ones(Bool, T_instances),
+        K_clusters,
+        T_instances,
+    )
 
-    G_ = if K_current > 0 && T_instances > 0
-        temp_G = sparse(ones(Int, T_instances), 1:T_instances, true, K_current, T_instances)
-        _init_G_distances = pairwise(W_metric, C_, X_mat_transposed)
-        assign_closest!(temp_G, _init_G_distances)
-        temp_G
-    else
-        spzeros(Bool, K_current, T_instances)
-    end
-
-    L_ = zeros(Float64, M_classes, K_current)
-    if K_current > 0 && T_instances > 0
-        update_L!(L_, Pi_mat, G_, K_current, M_classes)
-    end
-
-    # Calculate if loop will run or debug is on
-    initial_loss = if model.max_iter > 0 || model.debug_loss
-        calc_loss(
-            X_mat_transposed,
-            Pi_mat,
-            C_,
-            W_,
-            L_,
-            G_,
-            model.epsC,
-            model.epsW,
-            K_current,
-            T_instances,
-        )
-    else
-        Inf
-    end
-
-    return C_, W_, G_, L_, W_metric, K_current, initial_loss
+    return C, W, L, G
 end
 
 # Update step for the affiliation matrix Γ

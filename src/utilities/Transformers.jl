@@ -160,8 +160,12 @@ function MLJModelInterface.inverse_transform(transformer::MinMaxScaler, fitresul
 end
 
 # Specify input and output scitypes
-MLJModelInterface.input_scitype(::Type{<:MinMaxScaler}) = MLJModelInterface.Table(MLJModelInterface.Continuous)
-MLJModelInterface.output_scitype(::Type{<:MinMaxScaler}) = MLJModelInterface.Table(MLJModelInterface.Continuous)
+function MLJModelInterface.input_scitype(::Type{<:MinMaxScaler})
+    MLJModelInterface.Table(MLJModelInterface.Continuous)
+end
+function MLJModelInterface.output_scitype(::Type{<:MinMaxScaler})
+    MLJModelInterface.Table(MLJModelInterface.Continuous)
+end
 
 # Fitted parameters
 function MLJModelInterface.fitted_params(::MinMaxScaler, fitresult) # TODO: also return names of features that were scaled
@@ -426,8 +430,12 @@ function MLJModelInterface.inverse_transform(
 end
 
 # MLJ traits
-MLJModelInterface.input_scitype(::Type{<:QuantileTransformer}) = MLJModelInterface.Table(MLJModelInterface.Continuous)
-MLJModelInterface.target_scitype(::Type{<:QuantileTransformer}) = MLJModelInterface.Table(MLJModelInterface.Continuous)
+function MLJModelInterface.input_scitype(::Type{<:QuantileTransformer})
+    MLJModelInterface.Table(MLJModelInterface.Continuous)
+end
+function MLJModelInterface.target_scitype(::Type{<:QuantileTransformer})
+    MLJModelInterface.Table(MLJModelInterface.Continuous)
+end
 
 function MLJModelInterface.fitted_params(::QuantileTransformer, fitresult)
     return (quantiles_list=fitresult.quantiles_list, col_names=fitresult.col_names)

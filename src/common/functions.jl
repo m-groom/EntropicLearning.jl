@@ -217,90 +217,152 @@ function assign_closest!(
 end
 
 """
-    left_stochastic(A::AbstractMatrix{Tr}) where {Tr<:Real}
+    left_stochastic(A::AbstractMatrix{Tf}) where {Tf<:AbstractFloat}
 
 Normalizes the columns of matrix `A` so that each column sums to 1.
 
-This creates a new matrix where each element `A[i,j]` is divided by the sum
-of the j-th column. The original matrix `A` is not modified.
+This creates a new matrix where each column is normalized using `normalise!`,
+which provides robust handling of edge cases (zero sums, NaN, Inf) by falling
+back to uniform distribution when needed. The original matrix `A` is not modified.
 
 # Arguments
-- `A::AbstractMatrix{Tr}`: The input matrix. `Tr` is a `Real` type.
+- `A::AbstractMatrix{Tf}`: The input matrix. `Tf` is an `AbstractFloat` type.
 
 # Returns
-- `AbstractMatrix{<:Real}`: A new matrix with columns normalized to sum to 1.
-  The element type will be the result of the division (often `Float64`).
+- `AbstractMatrix{Tf}`: A new matrix with columns normalized to sum to 1.
 
 # See Also
 - [`left_stochastic!`](@ref): In-place version of this function.
 - [`right_stochastic`](@ref): Normalizes rows to sum to 1.
 - [`right_stochastic!`](@ref): In-place version of `right_stochastic`.
+- [`normalise!`](@ref): The underlying function used for each column.
 """
-left_stochastic(A::AbstractMatrix{Tr}) where {Tr<:Real} = A ./ sum(A, dims=1)
+function left_stochastic(A::AbstractMatrix{Tf}) where {Tf<:AbstractFloat}
+    B = copy(A)
+    left_stochastic!(B)
+    return B
+end
 
 """
-    left_stochastic!(A::AbstractMatrix{Tr}) where {Tr<:Real}
+    left_stochastic!(A::AbstractMatrix{Tf}) where {Tf<:AbstractFloat}
 
 Normalizes the columns of matrix `A` in-place so that each column sums to 1.
 
-Each element `A[i,j]` is divided by the sum of the j-th column. The matrix `A`
-is modified directly.
+Each column is normalized using `normalise!`, which provides robust handling of
+edge cases (zero sums, NaN, Inf) by falling back to uniform distribution when needed.
+The matrix `A` is modified directly.
 
 # Arguments
-- `A::AbstractMatrix{Tr}`: The matrix to be normalized in-place. `Tr` is a `Real` type.
+- `A::AbstractMatrix{Tf}`: The matrix to be normalized in-place. `Tf` is an `AbstractFloat` type.
 
 # Returns
-- `AbstractMatrix{<:Real}`: The modified matrix `A` with columns normalized.
+- `AbstractMatrix{Tf}`: The modified matrix `A` with columns normalized.
 
 # See Also
 - [`left_stochastic`](@ref): Non-mutating version of this function.
 - [`right_stochastic`](@ref): Normalizes rows to sum to 1.
 - [`right_stochastic!`](@ref): In-place version of `right_stochastic`.
+- [`normalise!`](@ref): The underlying function used for each column.
 """
-left_stochastic!(A::AbstractMatrix{Tr}) where {Tr<:Real} = A ./= sum(A, dims=1)
+function left_stochastic!(A::AbstractMatrix{Tf}) where {Tf<:AbstractFloat}
+    for j in axes(A, 2)
+        normalise!(view(A, :, j))
+    end
+    return nothing
+end
 
 """
-    right_stochastic(A::AbstractMatrix{Tr}) where {Tr<:Real}
+    right_stochastic(A::AbstractMatrix{Tf}) where {Tf<:AbstractFloat}
 
 Normalizes the rows of matrix `A` so that each row sums to 1.
 
-This creates a new matrix where each element `A[i,j]` is divided by the sum
-of the i-th row. The original matrix `A` is not modified.
+This creates a new matrix where each row is normalized using `normalise!`,
+which provides robust handling of edge cases (zero sums, NaN, Inf) by falling
+back to uniform distribution when needed. The original matrix `A` is not modified.
 
 # Arguments
-- `A::AbstractMatrix{Tr}`: The input matrix. `Tr` is a `Real` type.
+- `A::AbstractMatrix{Tf}`: The input matrix. `Tf` is an `AbstractFloat` type.
 
 # Returns
-- `AbstractMatrix{<:Real}`: A new matrix with rows normalized to sum to 1.
-  The element type will be the result of the division (often `Float64`).
+- `AbstractMatrix{Tf}`: A new matrix with rows normalized to sum to 1.
 
 # See Also
 - [`right_stochastic!`](@ref): In-place version of this function.
 - [`left_stochastic`](@ref): Normalizes columns to sum to 1.
 - [`left_stochastic!`](@ref): In-place version of `left_stochastic`.
+- [`normalise!`](@ref): The underlying function used for each row.
 """
-right_stochastic(A::AbstractMatrix{Tr}) where {Tr<:Real} = A ./ sum(A, dims=2)
+function right_stochastic(A::AbstractMatrix{Tf}) where {Tf<:AbstractFloat}
+    B = copy(A)
+    right_stochastic!(B)
+    return B
+end
 
 """
-    right_stochastic!(A::AbstractMatrix{Tr}) where {Tr<:Real}
+    right_stochastic!(A::AbstractMatrix{Tf}) where {Tf<:AbstractFloat}
 
 Normalizes the rows of matrix `A` in-place so that each row sums to 1.
 
-Each element `A[i,j]` is divided by the sum of the i-th row. The matrix `A`
-is modified directly.
+Each row is normalized using `normalise!`, which provides robust handling of
+edge cases (zero sums, NaN, Inf) by falling back to uniform distribution when needed.
+The matrix `A` is modified directly.
 
 # Arguments
-- `A::AbstractMatrix{Tr}`: The matrix to be normalized in-place. `Tr` is a `Real` type.
+- `A::AbstractMatrix{Tf}`: The matrix to be normalized in-place. `Tf` is an `AbstractFloat` type.
 
 # Returns
-- `AbstractMatrix{<:Real}`: The modified matrix `A` with rows normalized.
+- `AbstractMatrix{Tf}`: The modified matrix `A` with rows normalized.
 
 # See Also
 - [`right_stochastic`](@ref): Non-mutating version of this function.
 - [`left_stochastic`](@ref): Normalizes columns to sum to 1.
 - [`left_stochastic!`](@ref): In-place version of `left_stochastic`.
+- [`normalise!`](@ref): The underlying function used for each row.
 """
-right_stochastic!(A::AbstractMatrix{Tr}) where {Tr<:Real} = A ./= sum(A, dims=2)
+function right_stochastic!(A::AbstractMatrix{Tf}) where {Tf<:AbstractFloat}
+    for i in axes(A, 1)
+        normalise!(view(A, i, :))
+    end
+    return nothing
+end
+
+"""
+    normalise!(W::AbstractVector{Tf}) where {Tf<:AbstractFloat}
+
+Normalizes a vector `W` in-place so that its elements sum to 1.
+
+If the sum of elements in `W` is greater than `eps(Tf)`, each element is divided
+by the sum. Otherwise, if the sum is too small, the vector is filled with a
+uniform distribution where each element equals `1/length(W)`.
+
+This function is particularly useful for normalizing probability or weight vectors
+while handling numerical edge cases where the sum might be zero or very small.
+
+# Arguments
+- `W::AbstractVector{Tf}`: The vector to be normalized in-place. `Tf` is an `AbstractFloat` type.
+
+# Returns
+- `nothing`: The function modifies `W` in-place.
+
+# See Also
+- [`left_stochastic!`](@ref): Normalizes matrix columns to sum to 1.
+- [`right_stochastic!`](@ref): Normalizes matrix rows to sum to 1.
+"""
+function normalise!(W::AbstractVector{Tf}) where {Tf<:AbstractFloat}
+    sum_W = sum(W)
+    # Handle edge cases
+    if sum_W <= eps(Tf) || !isfinite(sum_W)
+        # Fallback to a uniform distribution.
+        fill!(W, Tf(1.0) / length(W))
+    else
+        # Standard normalisation
+        @inbounds @simd for d in eachindex(W)
+            W[d] /= sum_W
+        end
+    end
+
+    return nothing
+end
 
 """
     softmax!(G, A; prefactor=1.0)
@@ -381,19 +443,7 @@ function softmax!(
         end
 
         # Normalise
-        sum_col_G = sum(current_col_G)
-
-        # Handle cases where sum_col_G is zero (all underflowed), negative (should not
-        # happen), NaN, or Inf.
-        if sum_col_G <= eps(Tf) || !isfinite(sum_col_G)
-            # Fallback to a uniform distribution for this column.
-            current_col_G .= Tf(1.0) / size(A, 1)
-        else
-            # Standard normalisation
-            @simd for k in axes(G, 1)
-                current_col_G[k] /= sum_col_G
-            end
-        end
+        normalise!(current_col_G)
     end
     return nothing
 end
@@ -436,19 +486,7 @@ function softmax!(
     end
 
     # Normalise
-    sum_W = sum(W)
-
-    # Handle cases where sum_W is zero (all underflowed), negative (should not
-    # happen), NaN, or Inf.
-    if sum_W <= eps(Tf) || !isfinite(sum_W)
-        # Fallback to a uniform distribution.
-        W .= Tf(1.0) / length(b)
-    else
-        # Standard normalisation
-        @inbounds @simd for d in eachindex(W)
-            W[d] /= sum_W
-        end
-    end
+    normalise!(W)
 
     return nothing
 end

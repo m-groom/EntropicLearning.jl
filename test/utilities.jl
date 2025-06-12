@@ -238,17 +238,13 @@ end
         fit_params = fitted_params(mach)
 
         # Mapped to min of fitted quantiles for 'a'
-        @test Tables.getcolumn(X_restored_new, :a)[1] ≈
-              fit_params.quantiles_list[1][1] atol=1e-9
+        @test Tables.getcolumn(X_restored_new, :a)[1] ≈ fit_params.quantiles_list[1][1] atol=1e-9
         # Mapped to max
-        @test Tables.getcolumn(X_restored_new, :a)[3] ≈
-              fit_params.quantiles_list[1][end] atol=1e-9
+        @test Tables.getcolumn(X_restored_new, :a)[3] ≈ fit_params.quantiles_list[1][end] atol=1e-9
         # Mapped to min (which is largest original value for 'b')
-        @test Tables.getcolumn(X_restored_new, :b)[3] ≈
-              fit_params.quantiles_list[2][1] atol=1e-9
+        @test Tables.getcolumn(X_restored_new, :b)[3] ≈ fit_params.quantiles_list[2][1] atol=1e-9
         # Mapped to max (smallest original for 'b')
-        @test Tables.getcolumn(X_restored_new, :b)[1] ≈
-              fit_params.quantiles_list[2][end] atol=1e-9
+        @test Tables.getcolumn(X_restored_new, :b)[1] ≈ fit_params.quantiles_list[2][end] atol=1e-9
     end
 
     @testset "Error for invalid feature_range" begin

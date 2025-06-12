@@ -168,7 +168,7 @@ function _debug_check_loss_substep(
 end
 
 # MLJ Interface
-function MMI.fit(model::eSPA, verbosity::Int, X, y)
+function MMI.fit(model::eSPA, verbosity::Int, X, y) # TODO: write a data front-end
     rng = _get_rng(model.random_state)
     to = TimerOutput()
 
@@ -188,7 +188,7 @@ function MMI.fit(model::eSPA, verbosity::Int, X, y)
 
     # --- Initialization ---
     C, W, L, G = initialise(
-        model, X_mat, Pi_mat, D_features, T_instances, M_classes; rng=rng
+        model, X_mat, y_int, D_features, T_instances, M_classes; rng=rng
     )
 
     K_current_ref = Ref(K_current_val)
@@ -197,7 +197,7 @@ function MMI.fit(model::eSPA, verbosity::Int, X, y)
     # Store initial loss if loop will run and loss is valid
     if model.max_iter > 0 && initial_loss != Inf
         losses[1] = initial_loss
-    # Ensure losses[1] is Inf if not otherwise set and loop runs
+        # Ensure losses[1] is Inf if not otherwise set and loop runs
     elseif model.max_iter > 0
         losses[1] = Inf
     end

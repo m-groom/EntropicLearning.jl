@@ -43,7 +43,7 @@ function compute_mi_cd(
     if length(unique_labels) == 1
         return Tf(0.0)
     end
-
+    # TODO: optimisations
     for label in unique_labels
         mask = d .== label
         count = sum(mask)
@@ -117,6 +117,56 @@ end
 
 """
     mi_continuous_discrete(
+        x::AbstractVector{Tf}, y::AbstractVector{Ti}; n_neighbors::Int=3,
+        rng::AbstractRNG=Random.default_rng()
+    ) where {Tf<:AbstractFloat,Ti<:Integer}
+
+Estimate mutual information between a single continuous feature vector and a discrete target
+variable.
+
+This function computes the mutual information (MI) score between a continuous feature and
+discrete class labels. The implementation uses the Ross (2014) estimator designed for mixed
+continuous-discrete data, with feature scaling and noise addition for numerical stability.
+
+# Arguments
+- `x::AbstractVector{Tf}`: Feature vector of length T containing continuous values
+- `y::AbstractVector{Ti}`: Target vector of length T containing discrete class labels
+- `n_neighbors::Int=3`: Number of neighbors for MI estimation. Higher values reduce
+  variance but may introduce bias
+- `rng::AbstractRNG=Random.default_rng()`: Random number generator for reproducible
+  noise addition
+
+# Returns
+- `mi::Tf`: Mutual information score in nat units (always non-negative)
+
+# References
+- Ross, B. C. "Mutual Information between Discrete and Continuous Data Sets". PLoS ONE
+  9(2), 2014.
+"""
+function mi_continuous_discrete(
+    x::AbstractVector{Tf},
+    y::AbstractVector{Ti};
+    n_neighbors::Int=3,
+    rng::AbstractRNG=Random.default_rng(),
+) where {Tf<:AbstractFloat,Ti<:Integer}
+    # Scale feature (without centering, similar to sklearn's scale with with_mean=False)
+    x_scaled = copy(x)
+    std_val = std(x; corrected=false)
+    if std_val > 0
+        x_scaled ./= std_val
+    end
+
+    # Add small noise to continuous feature
+    # Following sklearn's approach: noise = 1e-10 * max(1, mean(abs(x))) * randn
+    mean_abs = max(Tf(1.0), mean(abs.(x_scaled)))
+    x_scaled .+= 1e-10 * mean_abs * randn(rng, length(x))
+
+    # Compute MI
+    return compute_mi_cd(x_scaled, y, n_neighbors)
+end
+
+"""
+    mi_continuous_discrete(
         X::AbstractMatrix{Tf}, y::AbstractVector{Ti}; n_neighbors::Int=3,
         rng::AbstractRNG=Random.default_rng()
     ) where {Tf<:AbstractFloat,Ti<:Integer}
@@ -155,28 +205,14 @@ function mi_continuous_discrete(
     rng::AbstractRNG=Random.default_rng(),
 ) where {Tf<:AbstractFloat,Ti<:Integer}
     # Get dimensions
-    D, T = size(X)
-
-    # Scale features (without centering, similar to sklearn's scale with with_mean=False)
-    X_scaled = copy(X)
-    @views for d in 1:D
-        std_val = std(X[d, :], corrected=false)
-        if std_val > 0
-            X_scaled[d, :] ./= std_val
-        end
-    end
-
-    # Add small noise to continuous features
-    # Following sklearn's approach: noise = 1e-10 * max(1, mean(abs(x))) * randn
-    for d in 1:D
-        mean_abs = max(Tf(1.0), mean(abs.(X_scaled[d, :])))
-        X_scaled[d, :] .+= 1e-10 * mean_abs * randn(rng, T)
-    end
+    D = size(X, 1)
 
     # Compute MI for each feature
     mi_scores = zeros(Tf, D)
-    @views for d in 1:D
-        mi_scores[d] = compute_mi_cd(X_scaled[d, :], y, n_neighbors)
+    @inbounds for d in 1:D
+        mi_scores[d] = mi_continuous_discrete_vector(
+            view(X, d, :), y; n_neighbors=n_neighbors, rng=rng
+        )
     end
 
     return mi_scores

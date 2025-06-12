@@ -193,7 +193,8 @@ using Statistics # For mean, etc.
 
         C = [0.0 0.0; 0.0 0.0] # Zero matrix
         LS_C = left_stochastic(C)
-        @test all(isnan, LS_C) # Division by zero sum
+        @test all(LS_C .≈ 0.5) # Fallback to uniform distribution
+        @test sum(LS_C, dims=1) ≈ [1.0 1.0] # Each column sums to 1
     end
 
     @testset "left_stochastic! Tests" begin
@@ -208,7 +209,8 @@ using Statistics # For mean, etc.
 
         B = [0.0 0.0; 0.0 0.0]
         left_stochastic!(B)
-        @test all(isnan, B)
+        @test all(B .≈ 0.5) # Fallback to uniform distribution
+        @test sum(B, dims=1) ≈ [1.0 1.0] # Each column sums to 1
     end
 
     @testset "right_stochastic Tests" begin
@@ -226,7 +228,8 @@ using Statistics # For mean, etc.
 
         C = [0.0 0.0; 0.0 0.0] # Zero matrix
         RS_C = right_stochastic(C)
-        @test all(isnan, RS_C) # Division by zero sum
+        @test all(RS_C .≈ 0.5) # Fallback to uniform distribution
+        @test sum(RS_C, dims=2) ≈ reshape([1.0, 1.0], 2, 1) # Each row sums to 1
     end
 
     @testset "right_stochastic! Tests" begin
@@ -241,7 +244,75 @@ using Statistics # For mean, etc.
 
         B = [0.0 0.0; 0.0 0.0]
         right_stochastic!(B)
-        @test all(isnan, B)
+        @test all(B .≈ 0.5) # Fallback to uniform distribution
+        @test sum(B, dims=2) ≈ reshape([1.0, 1.0], 2, 1) # Each row sums to 1
+    end
+
+    @testset "normalise! Tests" begin
+        # Basic normalization test (Float64)
+        W = [1.0, 2.0, 3.0]
+        W_orig = copy(W)
+        normalise!(W)
+
+        @test sum(W) ≈ 1.0
+        @test W ≈ W_orig ./ sum(W_orig)  # Should be [1/6, 2/6, 3/6]
+        @test W ≈ [1.0/6.0, 2.0/6.0, 3.0/6.0]
+
+        # Test with Float32
+        W_f32 = Float32[0.5, 1.5, 2.0]
+        W_f32_orig = copy(W_f32)
+        normalise!(W_f32)
+
+        @test sum(W_f32) ≈ 1.0f0
+        @test W_f32 ≈ W_f32_orig ./ sum(W_f32_orig)
+
+        # Test with already normalized vector
+        W_norm = [0.2, 0.3, 0.5]
+        W_norm_orig = copy(W_norm)
+        normalise!(W_norm)
+
+        @test sum(W_norm) ≈ 1.0
+        @test W_norm ≈ W_norm_orig  # Should be unchanged
+
+        # Test with very small sum (should fallback to uniform distribution)
+        W_small = [1e-20, 2e-20, 3e-20]  # Sum is much smaller than eps(Float64)
+        normalise!(W_small)
+
+        @test sum(W_small) ≈ 1.0
+        @test all(W_small .≈ 1.0/3.0)  # Should be uniform distribution
+
+        # Test with zero vector
+        W_zero = [0.0, 0.0, 0.0, 0.0]
+        normalise!(W_zero)
+
+        @test sum(W_zero) ≈ 1.0
+        @test all(W_zero .≈ 0.25)  # Should be uniform distribution
+
+        # Test with single element
+        W_single = [5.0]
+        normalise!(W_single)
+
+        @test sum(W_single) ≈ 1.0
+        @test W_single[1] ≈ 1.0
+
+        # Test with single zero element
+        W_single_zero = [0.0]
+        normalise!(W_single_zero)
+
+        @test sum(W_single_zero) ≈ 1.0
+        @test W_single_zero[1] ≈ 1.0
+
+        # Test empty vector (edge case)
+        W_empty = Float64[]
+        normalise!(W_empty)
+        @test length(W_empty) == 0  # Should remain empty
+
+        # Test with very small but non-zero sum at Float32 precision
+        W_small_f32 = Float32[1e-10, 2e-10]  # Sum might be smaller than eps(Float32)
+        normalise!(W_small_f32)
+        @test sum(W_small_f32) ≈ 1.0f0
+        # Depending on whether sum is > eps(Float32), could be normalized or uniform
+        @test all(W_small_f32 .≥ 0.0f0)  # At least check non-negative
     end
 
     @testset "Softmax Functions Tests" begin
@@ -263,12 +334,10 @@ using Statistics # For mean, etc.
             @test softmax!(G_f64, A_f64) === nothing
             # A is scaled by prefactor=1.0, so effectively unchanged if prefactor not given
             @test A_f64 == A_orig_f64
-            @test G_f64[:, 1] ≈ [
-                exp(1.0) / (exp(1.0) + exp(0.0)), exp(0.0) / (exp(1.0) + exp(0.0))
-            ]
-            @test G_f64[:, 2] ≈ [
-                exp(0.0) / (exp(0.0) + exp(1.0)), exp(1.0) / (exp(0.0) + exp(1.0))
-            ]
+            @test G_f64[:, 1] ≈
+                [exp(1.0) / (exp(1.0) + exp(0.0)), exp(0.0) / (exp(1.0) + exp(0.0))]
+            @test G_f64[:, 2] ≈
+                [exp(0.0) / (exp(0.0) + exp(1.0)), exp(1.0) / (exp(0.0) + exp(1.0))]
             @test check_sum_to_one(G_f64, 1)
 
             # Basic Float32 with prefactor
@@ -326,9 +395,8 @@ using Statistics # For mean, etc.
             @test softmax!(w_f64, b_f64) === nothing
             @test b_f64 == b_orig_f64 # b is scaled by prefactor=1.0
             norm_factor = exp(1.0) + exp(0.0) + exp(1.0)
-            @test w_f64 ≈ [
-                exp(1.0) / norm_factor, exp(0.0) / norm_factor, exp(1.0) / norm_factor
-            ]
+            @test w_f64 ≈
+                [exp(1.0) / norm_factor, exp(0.0) / norm_factor, exp(1.0) / norm_factor]
             @test check_sum_to_one(w_f64, 1)
 
             b_f32 = Float32[1.0, 2.0, 3.0]
