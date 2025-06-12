@@ -30,65 +30,104 @@ function compute_mi_cd(
     c::AbstractVector{Tf}, d::AbstractVector{Ti}, n_neighbors::Int=3
 ) where {Tf<:AbstractFloat,Ti<:Integer}
     n_samples = length(c)
-    c_reshaped = reshape(c, :, 1)  # Make it a column matrix for KDTree
 
+    # Pre-allocate working arrays
     radius = zeros(Tf, n_samples)
     label_counts = zeros(Ti, n_samples)
     k_all = zeros(Ti, n_samples)
 
-    # For each unique label
+    # Get unique labels
     unique_labels = unique(d)
 
     # If there's only one unique label, MI is 0
     if length(unique_labels) == 1
         return Tf(0.0)
     end
-    # TODO: optimisations
+
+    # Pre-compute label indices for all labels
+    label_to_indices = Dict{Ti, Vector{Int}}()
+    @inbounds for i in 1:n_samples
+        label = d[i]
+        if haskey(label_to_indices, label)
+            push!(label_to_indices[label], i)
+        else
+            label_to_indices[label] = [i]
+        end
+    end
+
+    # Process each unique label using pre-computed indices
     for label in unique_labels
-        mask = d .== label
-        count = sum(mask)
+        label_indices = label_to_indices[label]
+        count = length(label_indices)
 
         if count > 1
             k = min(n_neighbors, count - 1)
-            # Get indices where mask is true
-            masked_indices = findall(mask)
-            masked_c = c_reshaped[masked_indices, :]
 
-            # Build KDTree with Chebyshev metric for masked points
-            kdtree = KDTree(masked_c', Chebyshev())
-
-            # Find k nearest neighbors for each point in this label group
-            for (i, idx) in enumerate(masked_indices)
-                # k+1 because it includes the point itself
-                idxs, dists = knn(kdtree, vec(masked_c[i, :]), k + 1)
-
-                # Sort distances to ensure correct ordering
-                sorted_dists = sort(dists)
-                # The k-th neighbor (excluding self which has distance 0) is at position k+1
-                radius[idx] = sorted_dists[end]
+            # Extract values for this label
+            label_values = Vector{Tf}(undef, count)
+            @inbounds @simd for i in 1:count
+                label_values[i] = c[label_indices[i]]
             end
 
-            k_all[mask] .= k
+            # Create matrix for KDTree (single row since 1D data)
+            label_matrix = reshape(label_values, 1, count)
+            kdtree = KDTree(label_matrix, Chebyshev())
+
+            # Find k nearest neighbors for each point in this label group
+            query_point = Vector{Tf}(undef, 1) # Pre-allocate to avoid repeated allocations
+            @inbounds for (i, idx) in enumerate(label_indices)
+                query_point[1] = label_values[i]
+                _, dists = knn(kdtree, query_point, k + 1)
+
+                # Get maximum distance (k-th neighbor, avoids the need to sort)
+                radius[idx] = maximum(dists)
+            end
+
+            # Update k_all and label_counts for this label
+            @inbounds @simd for idx in label_indices
+                k_all[idx] = k
+                label_counts[idx] = count
+            end
+        else
+            # Single point labels get count but no valid k
+            @inbounds for idx in label_indices
+                label_counts[idx] = count
+            end
         end
-        label_counts[mask] .= count
     end
 
-    # Ignore points with unique labels
-    mask = label_counts .> 1
-    n_samples_filtered = sum(mask)
+    # Count and filter points
+    n_samples_filtered = 0
+    @inbounds for i in 1:n_samples
+        if label_counts[i] > 1
+            n_samples_filtered += 1
+        end
+    end
 
     if n_samples_filtered == 0
         return Tf(0.0)
     end
 
-    label_counts_filtered = label_counts[mask]
-    k_all_filtered = k_all[mask]
-    c_filtered = c_reshaped[mask, :]
-    radius_filtered = radius[mask]
+    # Pre-allocate filtered arrays with known size
+    label_counts_filtered = Vector{Ti}(undef, n_samples_filtered)
+    k_all_filtered = Vector{Ti}(undef, n_samples_filtered)
+    c_filtered_values = Vector{Tf}(undef, n_samples_filtered)
+    radius_filtered = Vector{Tf}(undef, n_samples_filtered)
+
+    # Fill filtered arrays
+    j = 1
+    @inbounds for i in 1:n_samples
+        if label_counts[i] > 1
+            label_counts_filtered[j] = label_counts[i]
+            k_all_filtered[j] = k_all[i]
+            c_filtered_values[j] = c[i]
+            radius_filtered[j] = radius[i]
+            j += 1
+        end
+    end
 
     # Apply nextafter towards zero to radius
-    for i in eachindex(radius_filtered)
-        # Mimic np.nextafter(radius, 0) - move slightly towards zero
+    @inbounds @simd for i in eachindex(radius_filtered)
         if radius_filtered[i] > 0
             radius_filtered[i] = prevfloat(radius_filtered[i])
         end
@@ -97,20 +136,21 @@ function compute_mi_cd(
     end
 
     # Build KDTree for all filtered points
-    kdtree_all = KDTree(c_filtered', Chebyshev())
+    c_filtered_matrix = reshape(c_filtered_values, 1, n_samples_filtered)
+    kdtree_all = KDTree(c_filtered_matrix, Chebyshev())
 
     # Count points within radius for each point
-    m_all = zeros(Ti, n_samples_filtered)
-    for i in 1:n_samples_filtered
-        # Use inrange to find all points within radius
-        neighbors = inrange(kdtree_all, vec(c_filtered[i, :]), radius_filtered[i])
-        m_all[i] = length(neighbors)  # Count includes the point itself
+    m_all = Vector{Ti}(undef, n_samples_filtered)
+    query_point = Vector{Tf}(undef, 1)
+    @inbounds for i in 1:n_samples_filtered
+        query_point[1] = c_filtered_values[i]
+        neighbors = inrange(kdtree_all, query_point, radius_filtered[i])
+        m_all[i] = length(neighbors)
     end
 
     # Compute mutual information using the formula
-    mi =
-        digamma(n_samples_filtered) + mean(digamma.(k_all_filtered)) -
-        mean(digamma.(label_counts_filtered)) - mean(digamma.(m_all))
+    mi = digamma(n_samples_filtered) + mean(digamma.(k_all_filtered)) -
+         mean(digamma.(label_counts_filtered)) - mean(digamma.(m_all))
 
     return max(Tf(0.0), mi)
 end
@@ -149,17 +189,25 @@ function mi_continuous_discrete(
     n_neighbors::Int=3,
     rng::AbstractRNG=Random.default_rng(),
 ) where {Tf<:AbstractFloat,Ti<:Integer}
-    # Scale feature (without centering, similar to sklearn's scale with with_mean=False)
-    x_scaled = copy(x)
+    n_samples = length(x)
+
+    # Scale feature (without centering)
     std_val = std(x; corrected=false)
     if std_val > 0
-        x_scaled ./= std_val
+        x_scaled = x ./ std_val  # Use broadcasting instead of copy + in-place division
+    else
+        x_scaled = copy(x)  # Only copy when necessary
     end
 
     # Add small noise to continuous feature
     # Following sklearn's approach: noise = 1e-10 * max(1, mean(abs(x))) * randn
-    mean_abs = max(Tf(1.0), mean(abs.(x_scaled)))
-    x_scaled .+= 1e-10 * mean_abs * randn(rng, length(x))
+    mean_abs = max(Tf(1.0), mean(abs, x_scaled))
+    noise_scale = Tf(1e-10) * mean_abs
+
+    # Generate noise and add to feature
+    @inbounds @simd for i in 1:n_samples
+        x_scaled[i] += noise_scale * randn(rng, Tf)
+    end
 
     # Compute MI
     return compute_mi_cd(x_scaled, y, n_neighbors)
@@ -204,13 +252,14 @@ function mi_continuous_discrete(
     n_neighbors::Int=3,
     rng::AbstractRNG=Random.default_rng(),
 ) where {Tf<:AbstractFloat,Ti<:Integer}
-    # Get dimensions
     D = size(X, 1)
 
+    # Pre-allocate result array
+    mi_scores = Vector{Tf}(undef, D)
+
     # Compute MI for each feature
-    mi_scores = zeros(Tf, D)
     @inbounds for d in 1:D
-        mi_scores[d] = mi_continuous_discrete_vector(
+        mi_scores[d] = mi_continuous_discrete(
             view(X, d, :), y; n_neighbors=n_neighbors, rng=rng
         )
     end

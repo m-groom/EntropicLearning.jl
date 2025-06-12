@@ -32,7 +32,7 @@ function initialise(
     C = zeros(Tf, D_features, K_clusters)
     if model.kpp_init   # Use k-means++ to initialise the centroids
         iseeds = Vector{Int}(undef, K_clusters)
-        if model.mi_init
+        if model.mi_init    # We already have a somewhat informative W
             initseeds!(iseeds, KmppAlg(), X, WeightedSqEuclidean(W); rng=rng)
         else
             initseeds!(iseeds, KmppAlg(), X, SqEuclidean(); rng=rng)
