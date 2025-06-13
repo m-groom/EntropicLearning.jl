@@ -52,15 +52,15 @@ Fields:
   Default: `GLOBAL_RNG`.
 """
 MMI.@mlj_model mutable struct eSPAClassifier <: MMI.Probabilistic
-    K::Int               = 10::(_ > 0)
-    epsC::Float64        = 1e-3::(_ > 0)
-    epsW::Float64        = 1e-3::(_ > 0)
-    kpp_init::Bool       = true::(_ in (true, false))
-    mi_init::Bool        = true::(_ in (true, false))
+    K::Int = 10::(_ > 0)
+    epsC::Float64 = 1e-3::(_ > 0)
+    epsW::Float64 = 1e-3::(_ > 0)
+    kpp_init::Bool = true::(_ in (true, false))
+    mi_init::Bool = true::(_ in (true, false))
     iterative_pred::Bool = false::(_ in (true, false))
-    unbias::Bool         = false::(_ in (true, false))
-    max_iter::Int        = 200::(_ > 0)
-    tol::Float64         = 1e-8::(_ > 0)
+    unbias::Bool = false::(_ in (true, false))
+    max_iter::Int = 200::(_ > 0)
+    tol::Float64 = 1e-8::(_ > 0)
     random_state::Union{AbstractRNG,Integer} = GLOBAL_RNG
 end
 
@@ -111,7 +111,8 @@ function MMI.fit(model::eSPAClassifier, verbosity::Int, X, y)
 
     # --- Main Optimization Loop ---
     @timeit to "Training" begin
-        while (iter == 0 || abs((loss[iter + 1] - loss[iter]) / loss[iter]) > model.tol) && iter < model.max_iter
+        while (iter == 0 || abs((loss[iter + 1] - loss[iter]) / loss[iter]) > model.tol) &&
+            iter < model.max_iter
             # Update iteration counter
             iter += 1
 
@@ -135,7 +136,9 @@ function MMI.fit(model::eSPAClassifier, verbosity::Int, X, y)
             @timeit to "L" update_L!(L, Pi_mat, G)
 
             # Update loss
-            @timeit to "Loss" loss[iter + 1] = calc_loss(X_mat, Pi_mat, C, W, L, G, model.epsC, model.epsW)
+            @timeit to "Loss" loss[iter + 1] = calc_loss(
+                X_mat, Pi_mat, C, W, L, G, model.epsC, model.epsW
+            )
 
             # Check if loss function has increased
             if loss[iter + 1] - loss[iter] > eps(Tf) && verbosity > 0
@@ -174,12 +177,7 @@ function MMI.fit(model::eSPAClassifier, verbosity::Int, X, y)
     # --- Return fitresult, cache and report ---
     fitresult = eSPAFitResult(C, W, L, classes)
     cache = nothing
-    report = (
-        iterations=iter,
-        loss=loss[1:iter+1],
-        timings=to,
-        G=G,
-    )
+    report = (iterations=iter, loss=loss[1:(iter + 1)], timings=to, G=G)
 
     return (fitresult, cache, report)
 end
@@ -202,7 +200,6 @@ function MMI.predict(model::eSPAClassifier, fitresult::eSPAFitResult, Xnew)
     else
         return MMI.UnivariateFinite(fitresult.classes, probabilities)
     end
-
 end
 
 function MMI.predict_mode(model::eSPAClassifier, fitresult::eSPAFitResult, Xnew)
@@ -218,11 +215,7 @@ function MMI.predict_mode(model::eSPAClassifier, fitresult::eSPAFitResult, Xnew)
 end
 
 function MMI.fitted_params(::eSPAClassifier, fitresult::eSPAFitResult)
-    return (
-        C=fitresult.C,
-        W=fitresult.W,
-        L=fitresult.L,
-    )
+    return (C=fitresult.C, W=fitresult.W, L=fitresult.L)
 end
 
 # MLJ Traits
@@ -230,7 +223,7 @@ MMI.reports_feature_importances(::Type{<:eSPAClassifier}) = true
 MMI.iteration_parameter(::Type{<:eSPAClassifier}) = :max_iter
 
 MMI.metadata_model(
-    eSPAClassifier,
+    eSPAClassifier;
     input_scitype=Table(Continuous),
     target_scitype=AbstractVector{<:Finite},
     human_name="eSPA Classifier",

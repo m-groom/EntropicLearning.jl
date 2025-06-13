@@ -45,7 +45,7 @@ function compute_mi_cd(
     end
 
     # Pre-compute label indices for all labels
-    label_to_indices = Dict{Ti, Vector{Int}}()
+    label_to_indices = Dict{Ti,Vector{Int}}()
     @inbounds for i in 1:n_samples
         label = d[i]
         if haskey(label_to_indices, label)
@@ -149,8 +149,9 @@ function compute_mi_cd(
     end
 
     # Compute mutual information using the formula
-    mi = digamma(n_samples_filtered) + mean(digamma.(k_all_filtered)) -
-         mean(digamma.(label_counts_filtered)) - mean(digamma.(m_all))
+    mi =
+        digamma(n_samples_filtered) + mean(digamma.(k_all_filtered)) -
+        mean(digamma.(label_counts_filtered)) - mean(digamma.(m_all))
 
     return max(Tf(0.0), mi)
 end

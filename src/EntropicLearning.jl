@@ -28,7 +28,7 @@ export eSPAClassifier
 
 using MLJModelInterface
 MLJModelInterface.metadata_pkg(
-    eSPAClassifier,
+    eSPAClassifier;
     package_name="EntropicLearning",
     package_uuid="857d3a31-ba67-457f-9b14-0a8f313fa218",
     package_url="https://github.com/m-groom/EntropicLearning.jl",

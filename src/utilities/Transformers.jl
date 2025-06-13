@@ -161,10 +161,10 @@ end
 
 # Specify input and output scitypes
 function MLJModelInterface.input_scitype(::Type{<:MinMaxScaler})
-    MLJModelInterface.Table(MLJModelInterface.Continuous)
+    return MLJModelInterface.Table(MLJModelInterface.Continuous)
 end
 function MLJModelInterface.output_scitype(::Type{<:MinMaxScaler})
-    MLJModelInterface.Table(MLJModelInterface.Continuous)
+    return MLJModelInterface.Table(MLJModelInterface.Continuous)
 end
 
 # Fitted parameters
@@ -431,10 +431,10 @@ end
 
 # MLJ traits
 function MLJModelInterface.input_scitype(::Type{<:QuantileTransformer})
-    MLJModelInterface.Table(MLJModelInterface.Continuous)
+    return MLJModelInterface.Table(MLJModelInterface.Continuous)
 end
 function MLJModelInterface.target_scitype(::Type{<:QuantileTransformer})
-    MLJModelInterface.Table(MLJModelInterface.Continuous)
+    return MLJModelInterface.Table(MLJModelInterface.Continuous)
 end
 
 function MLJModelInterface.fitted_params(::QuantileTransformer, fitresult)

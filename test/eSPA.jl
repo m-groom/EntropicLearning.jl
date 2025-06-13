@@ -24,7 +24,7 @@ include("../src/eSPA/extras.jl")
             X = reshape(x, 1, n)
 
             mi_est = mi_continuous_discrete(
-                X, y_int, n_neighbors=3, rng=Random.MersenneTwister(42)
+                X, y_int; n_neighbors=3, rng=Random.MersenneTwister(42)
             )
 
             # println("Test 1 - Step threshold:")
@@ -45,7 +45,7 @@ include("../src/eSPA/extras.jl")
             X = reshape(x, 1, n)
 
             mi_est = mi_continuous_discrete(
-                X, y, n_neighbors=3, rng=Random.MersenneTwister(123)
+                X, y; n_neighbors=3, rng=Random.MersenneTwister(123)
             )
 
             # println("Test 2 - Four level quantizer:")
@@ -66,7 +66,7 @@ include("../src/eSPA/extras.jl")
             X = reshape(x, 1, n)
 
             mi_est = mi_continuous_discrete(
-                X, y, n_neighbors=3, rng=Random.MersenneTwister(2024)
+                X, y; n_neighbors=3, rng=Random.MersenneTwister(2024)
             )
 
             # println("Test 3 - Independent variables:")
@@ -88,7 +88,7 @@ include("../src/eSPA/extras.jl")
             X = reshape(x, 1, n)
 
             mi_est = mi_continuous_discrete(
-                X, y, n_neighbors=3, rng=Random.MersenneTwister(7)
+                X, y; n_neighbors=3, rng=Random.MersenneTwister(7)
             )
 
             # println("Test 4 - Constant label:")
@@ -197,7 +197,7 @@ include("../src/eSPA/extras.jl")
             X_t4 = ones(Float64, 1, 20) # All values are the same
             y_t4 = y_t1 # Use a varying y
             rng_t4 = Random.MersenneTwister(42)
-            mi_t4 = mi_continuous_discrete(X_t4, y_t4, n_neighbors=3, rng=rng_t4)
+            mi_t4 = mi_continuous_discrete(X_t4, y_t4; n_neighbors=3, rng=rng_t4)
 
             # println("Test - Zero std feature:")
             # println("Estimated MI: $(mi_t4[1])")
@@ -224,7 +224,7 @@ include("../src/eSPA/extras.jl")
             X_multi[3, :] = randn(rng, n)
 
             mi_multi = mi_continuous_discrete(
-                X_multi, y_multi, n_neighbors=3, rng=Random.MersenneTwister(1)
+                X_multi, y_multi; n_neighbors=3, rng=Random.MersenneTwister(1)
             )
 
             # println("Test - Multiple features:")
@@ -248,7 +248,7 @@ include("../src/eSPA/extras.jl")
             y_perfect = [0, 0, 0, 0, 0, 1, 1, 1, 1, 1]
 
             mi_perfect = mi_continuous_discrete(
-                X_perfect, y_perfect, n_neighbors=3, rng=Random.MersenneTwister(77)
+                X_perfect, y_perfect; n_neighbors=3, rng=Random.MersenneTwister(77)
             )
 
             # println("Test - Perfect separability:")
@@ -278,7 +278,7 @@ include("../src/eSPA/extras.jl")
             y_three[41:60] .= 2
 
             mi_three = mi_continuous_discrete(
-                X_three, y_three, n_neighbors=3, rng=Random.MersenneTwister(42)
+                X_three, y_three; n_neighbors=3, rng=Random.MersenneTwister(42)
             )
 
             # println("Test - Three classes:")
@@ -298,13 +298,13 @@ include("../src/eSPA/extras.jl")
             X = reshape(x, 1, n)
 
             mi_k1 = mi_continuous_discrete(
-                X, y_int, n_neighbors=1, rng=Random.MersenneTwister(1)
+                X, y_int; n_neighbors=1, rng=Random.MersenneTwister(1)
             )
             mi_k3 = mi_continuous_discrete(
-                X, y_int, n_neighbors=3, rng=Random.MersenneTwister(1)
+                X, y_int; n_neighbors=3, rng=Random.MersenneTwister(1)
             )
             mi_k5 = mi_continuous_discrete(
-                X, y_int, n_neighbors=5, rng=Random.MersenneTwister(1)
+                X, y_int; n_neighbors=5, rng=Random.MersenneTwister(1)
             )
 
             # println("Test - Different n_neighbors (discrete):")
@@ -328,7 +328,7 @@ include("../src/eSPA/extras.jl")
             # We expect it to either return empty array or handle the edge case
             try
                 mi_empty = mi_continuous_discrete(
-                    X_empty, y_empty, n_neighbors=3, rng=Random.MersenneTwister(42)
+                    X_empty, y_empty; n_neighbors=3, rng=Random.MersenneTwister(42)
                 )
                 # println("Test - Empty matrix:")
                 # println("MI result: $(mi_empty)")
@@ -346,7 +346,7 @@ include("../src/eSPA/extras.jl")
             y_single = [0]
 
             mi_single = mi_continuous_discrete(
-                X_single, y_single, n_neighbors=3, rng=Random.MersenneTwister(42)
+                X_single, y_single; n_neighbors=3, rng=Random.MersenneTwister(42)
             )
 
             # println("Test - Single sample discrete:")

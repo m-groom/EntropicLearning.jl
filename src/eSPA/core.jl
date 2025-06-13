@@ -86,7 +86,9 @@ function update_G!(
     if epsC > 0
         # Compute the classification error term
         logLP = Matrix{Tf}(undef, K_clusters, T_instances)  # logLP = ε_C × log.(Λ)' × Π
-        LinearAlgebra.BLAS.gemm!('T', 'N', Tf(epsC), safelog(L; tol=eps(Tf)), P, Tf(0.0), logLP)
+        LinearAlgebra.BLAS.gemm!(
+            'T', 'N', Tf(epsC), safelog(L; tol=eps(Tf)), P, Tf(0.0), logLP
+        )
 
         # Subtract the classification error term from the discretisation error term
         @inbounds @simd for i in eachindex(disc_error)
@@ -101,7 +103,7 @@ end
 
 # Find any empty clusters
 function find_empty(G::SparseMatrixCSC{Bool,Int})
-    sumG = sum(G, dims=2)       # Number of instances in each cluster
+    sumG = sum(G; dims=2)       # Number of instances in each cluster
     notEmpty = sumG .> eps(Tf)  # Find any empty boxes
     K_new = sum(notEmpty)       # Number of non-empty boxes
     return notEmpty, K_new
@@ -208,7 +210,9 @@ function calc_loss(
 end
 
 # Function to calculate Π
-function calc_P(L::AbstractMatrix{Tf}, G::SparseMatrixCSC{Bool,Int}) where {Tf<:AbstractFloat}
+function calc_P(
+    L::AbstractMatrix{Tf}, G::SparseMatrixCSC{Bool,Int}
+) where {Tf<:AbstractFloat}
     # From entlearn:
     # P = assign_closest(-safelog(L; tol=eps(Tf)) * G)
 
@@ -226,9 +230,7 @@ end
 
 # Prediction function
 function _predict_proba(
-    model::eSPAClassifier,
-    fitresult::eSPAFitResult,
-    X::AbstractMatrix{Tf},
+    model::eSPAClassifier, fitresult::eSPAFitResult, X::AbstractMatrix{Tf}
 ) where {Tf<:AbstractFloat}
     # Get dimensions
     T_instances = size(X, 2)

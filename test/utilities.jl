@@ -23,8 +23,8 @@ X = MLJBase.table(X_table)
         # Check mins and maxs of transformed data
         for col_name in Tables.columnnames(X_transformed)
             col_data = Tables.getcolumn(X_transformed, col_name)
-            @test minimum(col_data) ≈ 0.0 atol=1e-9
-            @test maximum(col_data) ≈ 1.0 atol=1e-9
+            @test minimum(col_data) ≈ 0.0 atol = 1e-9
+            @test maximum(col_data) ≈ 1.0 atol = 1e-9
         end
 
         # Check inverse_transform
@@ -32,21 +32,21 @@ X = MLJBase.table(X_table)
         for col_name in Tables.columnnames(X)
             original_col = Tables.getcolumn(X, col_name)
             restored_col = Tables.getcolumn(X_restored, col_name)
-            @test original_col ≈ restored_col atol=1e-9
+            @test original_col ≈ restored_col atol = 1e-9
         end
     end
 
     @testset "Custom feature_range (-1, 1)" begin
         fmin, fmax = -1.0, 1.0
-        scaler = MinMaxScaler(feature_range=(fmin, fmax))
+        scaler = MinMaxScaler(; feature_range=(fmin, fmax))
         mach = machine(scaler, X)
         fit!(mach)
         X_transformed = transform(mach, X)
 
         for col_name in Tables.columnnames(X_transformed)
             col_data = Tables.getcolumn(X_transformed, col_name)
-            @test minimum(col_data) ≈ fmin atol=1e-9
-            @test maximum(col_data) ≈ fmax atol=1e-9
+            @test minimum(col_data) ≈ fmin atol = 1e-9
+            @test maximum(col_data) ≈ fmax atol = 1e-9
         end
 
         # Inverse transform
@@ -54,7 +54,7 @@ X = MLJBase.table(X_table)
         for col_name in Tables.columnnames(X)
             original_col = Tables.getcolumn(X, col_name)
             restored_col = Tables.getcolumn(X_restored, col_name)
-            @test original_col ≈ restored_col atol=1e-9
+            @test original_col ≈ restored_col atol = 1e-9
         end
     end
 
@@ -62,7 +62,7 @@ X = MLJBase.table(X_table)
         X_const_table = (a=[1.0, 1.0, 1.0], b=[2.0, 3.0, 4.0])
         X_const = MLJBase.table(X_const_table)
         fmin, fmax = 0.0, 1.0
-        scaler = MinMaxScaler(feature_range=(fmin, fmax))
+        scaler = MinMaxScaler(; feature_range=(fmin, fmax))
         mach = machine(scaler, X_const)
         fit!(mach)
         X_transformed = transform(mach, X_const)
@@ -71,21 +71,21 @@ X = MLJBase.table(X_table)
         @test all(a_transformed .≈ fmin)
 
         b_transformed = Tables.getcolumn(X_transformed, :b)
-        @test minimum(b_transformed) ≈ fmin atol=1e-9
-        @test maximum(b_transformed) ≈ fmax atol=1e-9
+        @test minimum(b_transformed) ≈ fmin atol = 1e-9
+        @test maximum(b_transformed) ≈ fmax atol = 1e-9
 
         # Inverse transform
         X_restored = inverse_transform(mach, X_transformed)
         for col_name in Tables.columnnames(X_const)
             original_col = Tables.getcolumn(X_const, col_name)
             restored_col = Tables.getcolumn(X_restored, col_name)
-            @test original_col ≈ restored_col atol=1e-9
+            @test original_col ≈ restored_col atol = 1e-9
         end
     end
 
     @testset "Feature range with zero width" begin
         fmin, fmax = 3.0, 3.0
-        scaler = MinMaxScaler(feature_range=(fmin, fmax))
+        scaler = MinMaxScaler(; feature_range=(fmin, fmax))
         mach = machine(scaler, X)
         fit!(mach)
         X_transformed = transform(mach, X)
@@ -145,11 +145,11 @@ end
             # For tied values, interpolation occurs.
             if col_name == :a # Unique values
                 expected_ranks = (0:9) ./ 9.0
-                @test col_data ≈ expected_ranks atol=1e-9
+                @test col_data ≈ expected_ranks atol = 1e-9
             end
             if col_name == :b # Unique values (reversed)
                 expected_ranks = reverse((0:9) ./ 9.0)
-                @test col_data ≈ expected_ranks atol=1e-9
+                @test col_data ≈ expected_ranks atol = 1e-9
             end
         end
 
@@ -158,13 +158,13 @@ end
         for col_name in Tables.columnnames(X_qt)
             original_col = Tables.getcolumn(X_qt, col_name)
             restored_col = Tables.getcolumn(X_restored, col_name)
-            @test original_col ≈ restored_col atol=1e-9
+            @test original_col ≈ restored_col atol = 1e-9
         end
     end
 
     @testset "Custom feature_range (-1, 1)" begin
         fmin, fmax = -1.0, 1.0
-        transformer = QuantileTransformer(feature_range=(fmin, fmax))
+        transformer = QuantileTransformer(; feature_range=(fmin, fmax))
         mach = machine(transformer, X_qt)
         fit!(mach)
         X_transformed = transform(mach, X_qt)
@@ -176,7 +176,7 @@ end
             if col_name == :a # Unique values
                 expected_ranks_01 = (0:9) ./ 9.0
                 expected_ranks_custom = expected_ranks_01 .* (fmax - fmin) .+ fmin
-                @test col_data ≈ expected_ranks_custom atol=1e-9
+                @test col_data ≈ expected_ranks_custom atol = 1e-9
             end
         end
 
@@ -184,7 +184,7 @@ end
         for col_name in Tables.columnnames(X_qt)
             original_col = Tables.getcolumn(X_qt, col_name)
             restored_col = Tables.getcolumn(X_restored, col_name)
-            @test original_col ≈ restored_col atol=1e-9
+            @test original_col ≈ restored_col atol = 1e-9
         end
     end
 
@@ -192,7 +192,7 @@ end
         X_const_table = (a=[1.0, 1.0, 1.0], b=[2.0, 3.0, 4.0])
         X_const = MLJBase.table(X_const_table)
         fmin, fmax = 0.0, 1.0
-        transformer = QuantileTransformer(feature_range=(fmin, fmax))
+        transformer = QuantileTransformer(; feature_range=(fmin, fmax))
         mach = machine(transformer, X_const)
         fit!(mach)
         X_transformed = transform(mach, X_const)
@@ -204,13 +204,13 @@ end
 
         b_transformed = Tables.getcolumn(X_transformed, :b)
         expected_b_ranks = [0.0, 0.5, 1.0]
-        @test b_transformed ≈ expected_b_ranks atol=1e-9
+        @test b_transformed ≈ expected_b_ranks atol = 1e-9
 
         X_restored = inverse_transform(mach, X_transformed)
         for col_name in Tables.columnnames(X_const)
             original_col = Tables.getcolumn(X_const, col_name)
             restored_col = Tables.getcolumn(X_restored, col_name)
-            @test original_col ≈ restored_col atol=1e-9
+            @test original_col ≈ restored_col atol = 1e-9
         end
     end
 
@@ -224,12 +224,12 @@ end
         X_transformed = transform(mach, X_new)
 
         # Values outside fitted range should be clamped to feature_range bounds
-        @test Tables.getcolumn(X_transformed, :a)[1] ≈ 0.0 atol=1e-9 # 0.0 < min(X_qt.a)
-        @test Tables.getcolumn(X_transformed, :a)[3] ≈ 1.0 atol=1e-9 # 11.0 > max(X_qt.a)
+        @test Tables.getcolumn(X_transformed, :a)[1] ≈ 0.0 atol = 1e-9 # 0.0 < min(X_qt.a)
+        @test Tables.getcolumn(X_transformed, :a)[3] ≈ 1.0 atol = 1e-9 # 11.0 > max(X_qt.a)
         # 12.0 > max(X_qt.b) -> smallest rank, maps to 1 for reversed
-        @test Tables.getcolumn(X_transformed, :b)[1] ≈ 1.0 atol=1e-9
+        @test Tables.getcolumn(X_transformed, :b)[1] ≈ 1.0 atol = 1e-9
         # -1.0 < min(X_qt.b) -> largest rank, maps to 0 for reversed
-        @test Tables.getcolumn(X_transformed, :b)[3] ≈ 0.0 atol=1e-9
+        @test Tables.getcolumn(X_transformed, :b)[3] ≈ 0.0 atol = 1e-9
 
         # Inverse transform for out-of-sample (especially clamped values)
         # This tests if values transformed to 0 or 1 are correctly mapped back to the
@@ -238,13 +238,17 @@ end
         fit_params = fitted_params(mach)
 
         # Mapped to min of fitted quantiles for 'a'
-        @test Tables.getcolumn(X_restored_new, :a)[1] ≈ fit_params.quantiles_list[1][1] atol=1e-9
+        @test Tables.getcolumn(X_restored_new, :a)[1] ≈ fit_params.quantiles_list[1][1] atol =
+            1e-9
         # Mapped to max
-        @test Tables.getcolumn(X_restored_new, :a)[3] ≈ fit_params.quantiles_list[1][end] atol=1e-9
+        @test Tables.getcolumn(X_restored_new, :a)[3] ≈ fit_params.quantiles_list[1][end] atol =
+            1e-9
         # Mapped to min (which is largest original value for 'b')
-        @test Tables.getcolumn(X_restored_new, :b)[3] ≈ fit_params.quantiles_list[2][1] atol=1e-9
+        @test Tables.getcolumn(X_restored_new, :b)[3] ≈ fit_params.quantiles_list[2][1] atol =
+            1e-9
         # Mapped to max (smallest original for 'b')
-        @test Tables.getcolumn(X_restored_new, :b)[1] ≈ fit_params.quantiles_list[2][end] atol=1e-9
+        @test Tables.getcolumn(X_restored_new, :b)[1] ≈ fit_params.quantiles_list[2][end] atol =
+            1e-9
     end
 
     @testset "Error for invalid feature_range" begin
@@ -264,7 +268,7 @@ end
         X_new = MLJBase.table(X_new_table)
         X_transformed = transform(mach, X_new)
         # For column 'b' (empty during fit), transform should map to middle of feature_range
-        @test Tables.getcolumn(X_transformed, :b)[1] ≈ 0.5 atol=1e-9
+        @test Tables.getcolumn(X_transformed, :b)[1] ≈ 0.5 atol = 1e-9
 
         # Inverse transform of such a column should result in NaN as per current
         # implementation
@@ -284,7 +288,7 @@ end
         X_new_table = (a=[1.5], b=[10.0])
         X_new = MLJBase.table(X_new_table)
         X_transformed = transform(mach, X_new)
-        @test Tables.getcolumn(X_transformed, :b)[1] ≈ 0.5 atol=1e-9 # Middle of range
+        @test Tables.getcolumn(X_transformed, :b)[1] ≈ 0.5 atol = 1e-9 # Middle of range
     end
 
     @testset "Column name mismatch" begin

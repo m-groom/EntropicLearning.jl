@@ -29,7 +29,7 @@ using Statistics # For mean, etc.
     @testset "entropy Tests" begin
         # Uniform distribution
         W1 = [0.25, 0.25, 0.25, 0.25]
-        @test entropy(W1) ≈ 2*log(2)
+        @test entropy(W1) ≈ 2 * log(2)
 
         # Distribution with zeros
         W2 = [0.5, 0.5, 0.0, 0.0]
@@ -46,7 +46,7 @@ using Statistics # For mean, etc.
         # Test with a matrix
         W_matrix = [0.1 0.4; 0.2 0.3]
         @test entropy(W_matrix) ≈
-            -(0.1*log(0.1) + 0.2*log(0.2) + 0.4*log(0.4) + 0.3*log(0.3))
+            -(0.1 * log(0.1) + 0.2 * log(0.2) + 0.4 * log(0.4) + 0.3 * log(0.3))
     end
 
     @testset "cross_entropy Tests" begin
@@ -55,25 +55,25 @@ using Statistics # For mean, etc.
         B_m1 = [0.2 0.8; 0.7 0.3]
         # Expected: - (0.1*log(0.2) + 0.8*log(0.7) + 0.9*log(0.8) + 0.2*log(0.3))
         expected_ce_m1 = -(
-            A_m1[1, 1]*log(B_m1[1, 1]) +
-            A_m1[2, 1]*log(B_m1[2, 1]) +
-            A_m1[1, 2]*log(B_m1[1, 2]) +
-            A_m1[2, 2]*log(B_m1[2, 2])
+            A_m1[1, 1] * log(B_m1[1, 1]) +
+            A_m1[2, 1] * log(B_m1[2, 1]) +
+            A_m1[1, 2] * log(B_m1[1, 2]) +
+            A_m1[2, 2] * log(B_m1[2, 2])
         )
         @test cross_entropy(A_m1, B_m1) ≈ expected_ce_m1
 
         # Basic vectors (Float32)
         A_v1 = Float32[0.25, 0.75]
         B_v1 = Float32[0.5, 0.5]
-        expected_ce_v1 = -(0.25f0*log(0.5f0) + 0.75f0*log(0.5f0))
+        expected_ce_v1 = -(0.25f0 * log(0.5f0) + 0.75f0 * log(0.5f0))
         @test cross_entropy(A_v1, B_v1) ≈ expected_ce_v1
         # Accumulator promotes
         @test typeof(cross_entropy(A_v1, B_v1)) == promote_type(Float32, Float32, Float64)
 
         # 3D Arrays
-        A_3d = rand(2, 2, 2);
+        A_3d = rand(2, 2, 2)
         A_3d ./= sum(A_3d)
-        B_3d = rand(2, 2, 2);
+        B_3d = rand(2, 2, 2)
         B_3d ./= sum(B_3d) # Make B_3d probabilities too
         expected_ce_3d = 0.0
         for i in eachindex(A_3d, B_3d)
@@ -86,13 +86,13 @@ using Statistics # For mean, etc.
         B_m2_zeros = [0.0 1.0]
         custom_tol = 1e-10
         # Expected: -(0.5*log(custom_tol) + 0.5*log(1.0))
-        expected_ce_m2_tol = -(0.5*log(custom_tol) + 0.5*log(1.0))
+        expected_ce_m2_tol = -(0.5 * log(custom_tol) + 0.5 * log(1.0))
         @test cross_entropy(A_m2, B_m2_zeros; tol=custom_tol) ≈ expected_ce_m2_tol
 
         # Test with smallest tol (default)
         # Expected: -(0.5*log(smallest) + 0.5*log(1.0))
         expected_ce_m2_smallest =
-            -(0.5*safelog(0.0; tol=EntropicLearning.smallest) + 0.5*log(1.0))
+            -(0.5 * safelog(0.0; tol=EntropicLearning.smallest) + 0.5 * log(1.0))
         @test cross_entropy(A_m2, B_m2_zeros) ≈ expected_ce_m2_smallest
 
         # DimensionMismatch Tests
@@ -116,8 +116,8 @@ using Statistics # For mean, etc.
 
     @testset "assign_closest Tests" begin
         distances1 = [
-            1.0 5.0 3.0;  # Column 1 min is 0.5 at index 2
-            0.5 2.0 4.0;  # Column 2 min is 1.0 at index 3
+            1.0 5.0 3.0  # Column 1 min is 0.5 at index 2
+            0.5 2.0 4.0  # Column 2 min is 1.0 at index 3
             3.0 1.0 0.5
         ]  # Column 3 min is 0.5 at index 3
 
@@ -125,7 +125,7 @@ using Statistics # For mean, etc.
         @test assign_closest(Float32.(distances1)) == [2, 3, 3]
 
         distances2 = [
-            1.0 1.0;  # Ties, should pick first
+            1.0 1.0  # Ties, should pick first
             1.0 1.0
         ]
         @test assign_closest(distances2) == [1, 1]
@@ -136,15 +136,15 @@ using Statistics # For mean, etc.
 
     @testset "assign_closest! (Dense) Tests" begin
         distances = [
-            1.0 5.0 3.0;
-            0.5 2.0 4.0;
+            1.0 5.0 3.0
+            0.5 2.0 4.0
             3.0 1.0 0.5
         ]
         Gamma = zeros(Float64, 3, 3)
         assign_closest!(Gamma, distances)
         expected_Gamma = [
-            0.0 0.0 0.0;
-            1.0 0.0 0.0;
+            0.0 0.0 0.0
+            1.0 0.0 0.0
             0.0 1.0 1.0
         ]
         @test Gamma == expected_Gamma
@@ -156,8 +156,8 @@ using Statistics # For mean, etc.
 
     @testset "assign_closest! (Sparse) Tests" begin
         distances = [
-            1.0 5.0 3.0 0.2;
-            0.5 2.0 4.0 0.5;
+            1.0 5.0 3.0 0.2
+            0.5 2.0 4.0 0.5
             3.0 1.0 0.5 1.0
         ]
 
@@ -184,9 +184,9 @@ using Statistics # For mean, etc.
         LS_A = left_stochastic(A)
 
         @test A == A_orig # Ensure A is not modified
-        @test sum(LS_A, dims=1) ≈ [1.0 1.0]
-        @test LS_A[:, 1] ≈ [1.0/4.0, 3.0/4.0]
-        @test LS_A[:, 2] ≈ [2.0/6.0, 4.0/6.0]
+        @test sum(LS_A; dims=1) ≈ [1.0 1.0]
+        @test LS_A[:, 1] ≈ [1.0 / 4.0, 3.0 / 4.0]
+        @test LS_A[:, 2] ≈ [2.0 / 6.0, 4.0 / 6.0]
 
         B = [1.0 0.0; 0.0 1.0] # Already left stochastic
         @test left_stochastic(B) == B
@@ -194,7 +194,7 @@ using Statistics # For mean, etc.
         C = [0.0 0.0; 0.0 0.0] # Zero matrix
         LS_C = left_stochastic(C)
         @test all(LS_C .≈ 0.5) # Fallback to uniform distribution
-        @test sum(LS_C, dims=1) ≈ [1.0 1.0] # Each column sums to 1
+        @test sum(LS_C; dims=1) ≈ [1.0 1.0] # Each column sums to 1
     end
 
     @testset "left_stochastic! Tests" begin
@@ -204,13 +204,13 @@ using Statistics # For mean, etc.
 
         left_stochastic!(A) # Modify A in-place
 
-        @test sum(A, dims=1) ≈ [1.0 1.0]
+        @test sum(A; dims=1) ≈ [1.0 1.0]
         @test A ≈ LS_A_ref
 
         B = [0.0 0.0; 0.0 0.0]
         left_stochastic!(B)
         @test all(B .≈ 0.5) # Fallback to uniform distribution
-        @test sum(B, dims=1) ≈ [1.0 1.0] # Each column sums to 1
+        @test sum(B; dims=1) ≈ [1.0 1.0] # Each column sums to 1
     end
 
     @testset "right_stochastic Tests" begin
@@ -219,9 +219,9 @@ using Statistics # For mean, etc.
         RS_A = right_stochastic(A)
 
         @test A == A_orig # Ensure A is not modified
-        @test sum(RS_A, dims=2) ≈ reshape([1.0, 1.0], 2, 1)
-        @test RS_A[1, :] ≈ [1.0/4.0, 3.0/4.0]
-        @test RS_A[2, :] ≈ [2.0/6.0, 4.0/6.0]
+        @test sum(RS_A; dims=2) ≈ reshape([1.0, 1.0], 2, 1)
+        @test RS_A[1, :] ≈ [1.0 / 4.0, 3.0 / 4.0]
+        @test RS_A[2, :] ≈ [2.0 / 6.0, 4.0 / 6.0]
 
         B = [1.0 0.0; 0.0 1.0] # Already right stochastic
         @test right_stochastic(B) == B
@@ -229,7 +229,7 @@ using Statistics # For mean, etc.
         C = [0.0 0.0; 0.0 0.0] # Zero matrix
         RS_C = right_stochastic(C)
         @test all(RS_C .≈ 0.5) # Fallback to uniform distribution
-        @test sum(RS_C, dims=2) ≈ reshape([1.0, 1.0], 2, 1) # Each row sums to 1
+        @test sum(RS_C; dims=2) ≈ reshape([1.0, 1.0], 2, 1) # Each row sums to 1
     end
 
     @testset "right_stochastic! Tests" begin
@@ -239,13 +239,13 @@ using Statistics # For mean, etc.
 
         right_stochastic!(A) # Modify A in-place
 
-        @test sum(A, dims=2) ≈ reshape([1.0, 1.0], 2, 1)
+        @test sum(A; dims=2) ≈ reshape([1.0, 1.0], 2, 1)
         @test A ≈ RS_A_ref
 
         B = [0.0 0.0; 0.0 0.0]
         right_stochastic!(B)
         @test all(B .≈ 0.5) # Fallback to uniform distribution
-        @test sum(B, dims=2) ≈ reshape([1.0, 1.0], 2, 1) # Each row sums to 1
+        @test sum(B; dims=2) ≈ reshape([1.0, 1.0], 2, 1) # Each row sums to 1
     end
 
     @testset "normalise! Tests" begin
@@ -256,7 +256,7 @@ using Statistics # For mean, etc.
 
         @test sum(W) ≈ 1.0
         @test W ≈ W_orig ./ sum(W_orig)  # Should be [1/6, 2/6, 3/6]
-        @test W ≈ [1.0/6.0, 2.0/6.0, 3.0/6.0]
+        @test W ≈ [1.0 / 6.0, 2.0 / 6.0, 3.0 / 6.0]
 
         # Test with Float32
         W_f32 = Float32[0.5, 1.5, 2.0]
@@ -279,7 +279,7 @@ using Statistics # For mean, etc.
         normalise!(W_small)
 
         @test sum(W_small) ≈ 1.0
-        @test all(W_small .≈ 1.0/3.0)  # Should be uniform distribution
+        @test all(W_small .≈ 1.0 / 3.0)  # Should be uniform distribution
 
         # Test with zero vector
         W_zero = [0.0, 0.0, 0.0, 0.0]
@@ -322,7 +322,7 @@ using Statistics # For mean, etc.
             if ndims(M) == 1
                 return sum(M) ≈ 1.0
             else
-                return all(sum(M, dims=dim) .≈ 1.0)
+                return all(sum(M; dims=dim) .≈ 1.0)
             end
         end
 
@@ -422,7 +422,7 @@ using Statistics # For mean, etc.
             b_orig_neg_inf = copy(b_neg_inf)
             softmax!(w_neg_inf, b_neg_inf)
             @test b_neg_inf == b_orig_neg_inf
-            @test all(w_neg_inf .≈ 1/3)
+            @test all(w_neg_inf .≈ 1 / 3)
             @test check_sum_to_one(w_neg_inf, 1)
 
             # Prefactor error
