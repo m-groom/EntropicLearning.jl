@@ -266,3 +266,7 @@ function mi_continuous_discrete(
 
     return mi_scores
 end
+
+# Helper function to get RNG
+_get_rng(random_state::Int) = MersenneTwister(random_state)
+_get_rng(random_state::AbstractRNG) = random_state

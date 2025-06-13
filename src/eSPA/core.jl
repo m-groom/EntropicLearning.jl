@@ -2,7 +2,7 @@
 
 # Initialisation for fitting an eSPA model
 function initialise(
-    model::eSPA,
+    model::eSPAClassifier,
     X::AbstractMatrix{Tf},
     y::AbstractVector{Ti},
     D_features::Int,
@@ -71,9 +71,8 @@ function update_G!(
     # Get dimensions
     K_clusters, T_instances = size(G)
 
-    # Compute the discretisation error term
-    # disc_error[k, t] = sum_d W[d] × (X[d, t] - C[d, k])^2
-    disc_error = fill(Tf(0.0), K_clusters, T_instances)
+    # Compute the discretisation error term: disc_error[k, t] = sum_d W[d] × (X[d, t] - C[d, k])^2
+    disc_error = Matrix{Tf}(undef, K_clusters, T_instances)
     @inbounds for t in 1:T_instances
         for k in 1:K_clusters
             temp = Tf(0.0)  # Cache current value for sum
@@ -84,13 +83,15 @@ function update_G!(
         end
     end
 
-    # Compute the classification error term
-    logLP = fill(Tf(0.0), K_clusters, T_instances)  # logLP = ε_C × log.(Λ)' × Π
-    LinearAlgebra.BLAS.gemm!('T', 'N', Tf(epsC), safelog(L; tol=eps(Tf)), P, Tf(0.0), logLP)
+    if epsC > 0
+        # Compute the classification error term
+        logLP = Matrix{Tf}(undef, K_clusters, T_instances)  # logLP = ε_C × log.(Λ)' × Π
+        LinearAlgebra.BLAS.gemm!('T', 'N', Tf(epsC), safelog(L; tol=eps(Tf)), P, Tf(0.0), logLP)
 
-    # Subtract the classification error term from the discretisation error term
-    @inbounds @simd for i in eachindex(disc_error)
-        disc_error[i] -= logLP[i]
+        # Subtract the classification error term from the discretisation error term
+        @inbounds @simd for i in eachindex(disc_error)
+            disc_error[i] -= logLP[i]
+        end
     end
 
     # Update Γ
@@ -98,26 +99,25 @@ function update_G!(
     return nothing
 end
 
-# Remove empty clusters from C, Λ and Γ - TODO: improve this
+# Find any empty clusters
+function find_empty(G::SparseMatrixCSC{Bool,Int})
+    sumG = sum(G, dims=2)       # Number of instances in each cluster
+    notEmpty = sumG .> eps(Tf)  # Find any empty boxes
+    K_new = sum(notEmpty)       # Number of non-empty boxes
+    return notEmpty, K_new
+end
+
+# Remove empty clusters from C, Λ and Γ
 function remove_empty(
     C_::AbstractMatrix{Tf},
     L_::AbstractMatrix{Tf},
     G_::SparseMatrixCSC{Bool,Int},
-    K_current_ref::Ref{Int},
+    idx::BitVector,
 ) where {Tf<:AbstractFloat}
-    if K_current_ref[] <= 0 # No clusters to remove
-        return C_, L_, G_
-    end
-
-    cluster_sums = sum(G_; dims=2)
-    empty_clusters_mask = cluster_sums .< eps(Tf) # Boolean vector of length K
-
-    @inbounds if any(empty_clusters_mask)
-        non_empty_mask = .!empty_clusters_mask
-        C = C_[:, non_empty_mask]
-        L = L_[:, non_empty_mask]
-        G = G_[non_empty_mask, :]
-        K_current_ref[] = size(C, 2)
+    @inbounds begin
+        C = C_[:, idx]
+        L = L_[:, idx]
+        G = G_[idx, :]
     end
     return C, L, G
 end
@@ -135,12 +135,11 @@ function update_W!(
 
     # Calculate the discretisation error for each feature dimension
     b = zeros(Tf, D_features)   # b[d] will store -sum_t sum_k (X[d,t] - C[d,k]×Γ[k, t])^2
-    @inbounds CG = view(C, :, G.rowval)  # CG = C × Γ
-
     # Iterate over instances (columns of X)
     @inbounds for t in 1:T_instances
+        cluster_idx = G.rowval[t]  # Which cluster instance t belongs to
         @simd for d in 1:D_features
-            b[d] -= (X[d, t] - CG[d, t])^2
+            b[d] -= (X[d, t] - C[d, cluster_idx])^2
         end
     end
 
@@ -190,16 +189,15 @@ function calc_loss(
 
     # Calculate the discretisation error
     disc_error = Tf(0.0) # = sum_t sum_d sum_k W[d] * (X[d, t] - C[d, k]×Γ[k, t])^2
-    @inbounds CG = view(C, :, G.rowval)  # CG = C × Γ
     @inbounds for t in 1:T_instances
+        cluster_idx = G.rowval[t]
         @simd for d in 1:D_features
-            disc_error += W[d] * (X[d, t] - CG[d, t])^2
+            disc_error += W[d] * (X[d, t] - C[d, cluster_idx])^2
         end
     end
 
     # Calculate the classification error
     @inbounds LG = view(L, :, G.rowval)   # LG = Λ × Γ
-
     class_error = Tf(epsC) * cross_entropy(P, LG; tol=eps(Tf)) # Includes the minus sign
 
     # Calculate the entropy term
@@ -209,4 +207,56 @@ function calc_loss(
     return (disc_error + class_error) / T_instances - entr_W
 end
 
-# TODO: add _predict_proba function
+# Function to calculate Π
+function calc_P(L::AbstractMatrix{Tf}, G::SparseMatrixCSC{Bool,Int}) where {Tf<:AbstractFloat}
+    # From entlearn:
+    # P = assign_closest(-safelog(L; tol=eps(Tf)) * G)
+
+    # Initialise Π
+    P = Matrix{Tf}(undef, size(L, 1), size(G, 2))
+
+    # Calculate Π = Λ × Γ
+    mul!(P, L, G)
+
+    # Ensure Π is normalised
+    left_stochastic!(P)
+
+    return P
+end
+
+# Prediction function
+function _predict_proba(
+    model::eSPAClassifier,
+    fitresult::eSPAFitResult,
+    X::AbstractMatrix{Tf},
+) where {Tf<:AbstractFloat}
+    # Get dimensions
+    T_instances = size(X, 2)
+    K_clusters = size(fitresult.C, 2)
+
+    # Initialise the random number generator
+    rng = _get_rng(model.random_state)
+
+    # Initialise Γ and Π
+    G = sparse(
+        rand(rng, 1:K_clusters, T_instances),
+        1:T_instances,
+        ones(Bool, T_instances),
+        K_clusters,
+        T_instances,
+    )
+
+    # Update Γ
+    update_G!(G, X, P, fitresult.C, fitresult.W, fitresult.L, model.epsC)
+
+    # Calculate Π
+    P = calc_P(fitresult.L, G)
+
+    if model.iterative_pred
+        # TODO: implement iterative prediction
+        error("Iterative prediction not yet implemented")
+    end
+
+    # Return Π
+    return P
+end
