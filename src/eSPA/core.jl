@@ -104,7 +104,7 @@ end
 # Find any empty clusters
 function find_empty(G::SparseMatrixCSC{Bool,Int})
     sumG = sum(G; dims=2)       # Number of instances in each cluster
-    notEmpty = sumG .> eps(Tf)  # Find any empty boxes
+    notEmpty = sumG .> eps()  # Find any empty boxes
     K_new = sum(notEmpty)       # Number of non-empty boxes
     return notEmpty, K_new
 end
@@ -210,22 +210,18 @@ function calc_loss(
 end
 
 # Function to calculate Π
-function calc_P(
-    L::AbstractMatrix{Tf}, G::SparseMatrixCSC{Bool,Int}
+function update_P!(
+    P::AbstractMatrix{Tf}, L::AbstractMatrix{Tf}, G::SparseMatrixCSC{Bool,Int}
 ) where {Tf<:AbstractFloat}
     # From entlearn:
     # P = assign_closest(-safelog(L; tol=eps(Tf)) * G)
-
-    # Initialise Π
-    P = Matrix{Tf}(undef, size(L, 1), size(G, 2))
-
     # Calculate Π = Λ × Γ
     mul!(P, L, G)
 
     # Ensure Π is normalised
     left_stochastic!(P)
 
-    return P
+    return nothing
 end
 
 # Prediction function
@@ -235,6 +231,7 @@ function _predict_proba(
     # Get dimensions
     T_instances = size(X, 2)
     K_clusters = size(fitresult.C, 2)
+    M_classes = size(fitresult.L, 1)
 
     # Initialise the random number generator
     rng = _get_rng(model.random_state)
@@ -247,18 +244,19 @@ function _predict_proba(
         K_clusters,
         T_instances,
     )
+    P = Matrix{Tf}(undef, M_classes, T_instances)
 
     # Update Γ
-    update_G!(G, X, P, fitresult.C, fitresult.W, fitresult.L, model.epsC)
+    update_G!(G, X, P, fitresult.C, fitresult.W, fitresult.L, Tf(0.0))
 
-    # Calculate Π
-    P = calc_P(fitresult.L, G)
+    # Update Π
+    update_P!(P, fitresult.L, G)
 
     if model.iterative_pred
         # TODO: implement iterative prediction
         error("Iterative prediction not yet implemented")
     end
 
-    # Return Π
+    # Return Π (TODO: also return Γ and store it in the report)
     return P
 end

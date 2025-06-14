@@ -52,16 +52,16 @@ Fields:
   Default: `GLOBAL_RNG`.
 """
 MMI.@mlj_model mutable struct eSPAClassifier <: MMI.Probabilistic
-    K::Int = 10::(_ > 0)
-    epsC::Float64 = 1e-3::(_ > 0)
-    epsW::Float64 = 1e-3::(_ > 0)
+    K::Int = 3::(_ > 0)
+    epsC::Float64 = 1e-3::(_ >= 0)
+    epsW::Float64 = 1e-1::(_ > 0)
     kpp_init::Bool = true::(_ in (true, false))
     mi_init::Bool = true::(_ in (true, false))
     iterative_pred::Bool = false::(_ in (true, false))
     unbias::Bool = false::(_ in (true, false))
     max_iter::Int = 200::(_ > 0)
     tol::Float64 = 1e-8::(_ > 0)
-    random_state::Union{AbstractRNG,Integer} = GLOBAL_RNG
+    random_state::Union{AbstractRNG,Integer} = Random.GLOBAL_RNG
 end
 
 # Fit Result Structure
@@ -200,18 +200,6 @@ function MMI.predict(model::eSPAClassifier, fitresult::eSPAFitResult, Xnew)
     else
         return MMI.UnivariateFinite(fitresult.classes, probabilities)
     end
-end
-
-function MMI.predict_mode(model::eSPAClassifier, fitresult::eSPAFitResult, Xnew)
-    distributions = MMI.predict(model, fitresult, Xnew)
-    if isempty(distributions)
-        if !isempty(fitresult.classes)
-            return similar(fitresult.classes, 0)
-        else
-            return []
-        end
-    end
-    return MMI.mode.(distributions)
 end
 
 function MMI.fitted_params(::eSPAClassifier, fitresult::eSPAFitResult)
