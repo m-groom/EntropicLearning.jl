@@ -19,38 +19,7 @@ const MMI = MLJModelInterface
 
 export eSPAClassifier
 
-"""
-    eSPAClassifier <: MLJModelInterface.Probabilistic
 
-entropy-optimal Sparse Probabilistic Approximation(eSPA) classifier.
-
-This model implements the eSPA algorithm, a clustering-based method designed for
-classification tasks. Key references:
-    - https://doi.org/10.1162/neco_a_01296
-    - https://doi.org/10.1162/neco_a_01490
-
-Fields:
-- `K::Int`: Initial number of clusters to find. Default: `10`.
-- `epsC::Float64`: Regularization parameter for the classification term in the loss
-  function. Default: `1e-3`.
-- `epsW::Float64`: Regularization parameter for the entropy of feature weights. Encourages
-  smoother/sparser feature weights. Default: `1e-3`.
-- `kpp_init::Bool`: If `true`, uses k-means++ for centroid initialization. If `false`,
-  centroids are initialized by randomly selecting data points. Default: `true`.
-- `mi_init::Bool`: If `true`, feature weights `W_` are initialized using the mutural
-  information between features and classes. If `false`, they are initialized randomly and
-  then normalized. Default: `true`.
-- `iterative_pred::Bool`: If `true`, performs iterative refinement of assignments during
-  the prediction phase. Default: `false`.
-- `unbias::Bool`: If `true`, performs an unbiasing step after the main optimization loop to
-  recalculate cluster assignments without the influence of `epsC`. Default: `false`.
-- `max_iter::Int`: Maximum number of iterations for the main optimization loop. Default: `200`.
-- `tol::Float64`: Tolerance for convergence. The algorithm stops if the relative change
-  in loss between iterations is less than `tol`. Default: `1e-8`.
-- `random_state::Union{AbstractRNG,Integer}`: Seed or AbstractRNG for random number
-  generation, ensuring reproducibility. Can be an `Int` or an `AbstractRNG` instance.
-  Default: `GLOBAL_RNG`.
-"""
 MMI.@mlj_model mutable struct eSPAClassifier <: MMI.Probabilistic
     K::Int = 3::(_ > 0)
     epsC::Float64 = 1e-3::(_ >= 0)
@@ -61,7 +30,7 @@ MMI.@mlj_model mutable struct eSPAClassifier <: MMI.Probabilistic
     unbias::Bool = false::(_ in (true, false))
     max_iter::Int = 200::(_ > 0)
     tol::Float64 = 1e-8::(_ > 0)
-    random_state::Union{AbstractRNG,Integer} = Random.GLOBAL_RNG
+    random_state::Union{AbstractRNG,Integer} = Random.default_rng()
 end
 
 # Fit Result Structure
@@ -109,7 +78,7 @@ function MMI.fit(model::eSPAClassifier, verbosity::Int, X, y)
         loss[1] = calc_loss(X_mat, Pi_mat, C, W, L, G, model.epsC, model.epsW)
     end
 
-    # --- Main Optimization Loop ---
+    # --- Main Optimisation Loop ---
     @timeit to "Training" begin
         while (iter == 0 || abs((loss[iter + 1] - loss[iter]) / loss[iter]) > model.tol) &&
             iter < model.max_iter
@@ -206,6 +175,19 @@ function MMI.fitted_params(::eSPAClassifier, fitresult::eSPAFitResult)
     return (C=fitresult.C, W=fitresult.W, L=fitresult.L)
 end
 
+function MMI.feature_importances(::eSPAClassifier, fitresult::eSPAFitResult, report)
+    # TODO: store feature names in the report
+
+    # Extract feature weights from fitresult
+    W = fitresult.W
+
+    # Create feature names (since they're not stored in fitresult)
+    feature_names = [Symbol("feature_$i") for i in eachindex(W)]
+
+    # Create pairs of feature_name => importance
+    return [feature_names[i] => W[i] for i in eachindex(W)]
+end
+
 # MLJ Traits
 MMI.reports_feature_importances(::Type{<:eSPAClassifier}) = true
 MMI.iteration_parameter(::Type{<:eSPAClassifier}) = :max_iter
@@ -217,5 +199,146 @@ MMI.metadata_model(
     human_name="eSPA Classifier",
     load_path="EntropicLearning.eSPA.eSPAClassifier",
 )
+
+
+########## Documentation ##########
+
+"""
+$(MMI.doc_header(eSPAClassifier))
+
+entropy-optimal Sparse Probabilistic Approximation (eSPA) classifier, a clustering-based
+method designed for classification tasks. The method uses entropic regularisation to
+simultaneously learn feature weights and cluster assignments for classification.
+This implementation is based on the Python implementation by Davide Bassetti:
+https://github.com/davbass/entlearn.
+
+# Training data
+
+In MLJ or MLJBase, bind an instance `model` to data with
+
+    mach = machine(model, X, y)
+
+where
+
+- `X`: any table of input features (e.g., a `DataFrame`) whose columns
+  each have `Continuous` element scitype; check column scitypes with `schema(X)`
+
+- `y`: the target, which can be any `AbstractVector` whose element
+  scitype is `<:OrderedFactor` or `<:Multiclass`; check the scitype
+  with `scitype(y)`
+
+Train the machine with `fit!(mach, rows=...)`.
+
+
+# Hyperparameters
+
+- `K::Int = 3`: Initial number of clusters to find.
+
+- `epsC::Float64 = 1e-3`: Regularisation parameter for the classification term in the loss
+  function.
+
+- `epsW::Float64 = 1e-1`: Regularisation parameter for the entropy of the feature weights.
+
+- `kpp_init::Bool = true`: If `true`, uses k-means++ for centroid initialization. If `false`,
+  centroids are initialised by randomly selecting data points.
+
+- `mi_init::Bool = true`: If `true`, feature weights `W` are initialised using the mutual
+  information between features and classes. If `false`, they are initialised randomly and
+  then normalised.
+
+- `iterative_pred::Bool = false`: If `true`, performs iterative refinement of cluster assignments
+  during the prediction phase.
+
+- `unbias::Bool = false`: If `true`, performs an unbiasing step after the main optimisation loop to
+  recalculate cluster assignments without the influence of `epsC`.
+
+- `max_iter::Int = 200`: Maximum number of iterations for the main optimisation loop.
+
+- `tol::Float64 = 1e-8`: Tolerance for convergence. The algorithm stops if the relative change
+  in loss between iterations is less than `tol`.
+
+- `random_state::Union{AbstractRNG,Integer} = Random.default_rng()`: Seed or AbstractRNG for random number
+  generation, ensuring reproducibility. Can be an `Int` or an `AbstractRNG` instance.
+
+
+# Operations
+
+- `predict(mach, Xnew)`: return probabilistic predictions of the target given
+  features `Xnew` having the same scitype as `X` above. Predictions are based on
+  learned cluster assignments and conditional probabilities.
+
+- `predict_mode(mach, Xnew)`: instead return the mode (most likely class) of each
+  prediction above.
+
+
+# Fitted parameters
+
+The fields of `fitted_params(mach)` are:
+
+- `C`: Centroids matrix (D × K), where D is the number of features and K is the number of clusters
+
+- `W`: Feature weights vector (D × 1), representing the learned importance of each feature
+
+- `L`: Conditional probabilities matrix (M × K), where M is the number of classes
+
+- `classes`: Vector of unique class labels
+
+
+# Report
+
+The fields of `report(mach)` are:
+
+- `iterations`: Number of iterations taken by the algorithm
+
+- `loss`: Loss function values at each iteration
+
+- `timings`: Timings for each step of the algorithm
+
+- `G`: Cluster assignment matrix (T × K), where T is the number of instances and K is the number of clusters
+
+
+# Examples
+
+```
+using MLJ
+
+# Load example dataset
+X, y = @load_iris
+
+# Create eSPA classifier with custom parameters
+eSPA = @load eSPAClassifier pkg=EntropicLearning
+model = eSPA(K=3, epsC=1e-3, epsW=1e-1, random_state=101)
+mach = machine(model, X, y)
+fit!(mach)
+
+# Make predictions
+Xnew = (sepal_length = [6.4, 7.2, 7.4],
+        sepal_width = [2.8, 3.0, 2.8],
+        petal_length = [5.6, 5.8, 6.1],
+        petal_width = [2.1, 1.6, 1.9])
+
+yhat = predict(mach, Xnew)     # probabilistic predictions
+predict_mode(mach, Xnew)       # point predictions
+pdf.(yhat, "virginica")        # probabilities for "virginica" class
+
+# Access fitted parameters
+fp = fitted_params(mach)
+fp.C                           # learned centroids
+fp.W                           # learned feature weights
+fp.L                           # conditional probabilities for each cluster
+report(mach).G                 # cluster assignment matrix
+
+# Example with different initialization
+model2 = eSPA(K=3, kpp_init=false, mi_init=false, random_state=42)
+mach2 = machine(model2, X, y)
+fit!(mach2)
+```
+
+See also the original references:
+- [Horenko 2020](https://doi.org/10.1162/neco_a_01296)
+- [Vecchi et al. 2022](https://doi.org/10.1162/neco_a_01490)
+
+"""
+eSPAClassifier
 
 end # module eSPA
