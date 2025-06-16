@@ -6,29 +6,14 @@ export MinMaxScaler, QuantileTransformer
 
 using SparseArrays
 include("common/functions.jl")
-export safelog,
-    entropy,
-    cross_entropy,
-    assign_closest,
-    assign_closest!,
-    left_stochastic,
-    left_stochastic!,
-    right_stochastic,
-    right_stochastic!,
-    normalise!,
-    softmax,
-    softmax!,
-    smallest,
-    smaller,
-    small
 
 include("eSPA/eSPA.jl")
 using .eSPA
 export eSPAClassifier
 
 using MLJModelInterface
-MLJModelInterface.metadata_pkg(
-    eSPAClassifier;
+MLJModelInterface.metadata_pkg.(
+    (eSPAClassifier, MinMaxScaler, QuantileTransformer),
     package_name="EntropicLearning",
     package_uuid="857d3a31-ba67-457f-9b14-0a8f313fa218",
     package_url="https://github.com/m-groom/EntropicLearning.jl",

@@ -5,39 +5,35 @@ using MLJBase: table
 using Tables
 using Statistics
 
+const MMI = MLJModelInterface
+
 export MinMaxScaler, QuantileTransformer
 
-"""
-    MinMaxScaler(; feature_range=(0.0, 1.0))
 
-An unsupervised model for scaling features to a given range, defaulting to [0, 1].
+######### MinMaxScaler ##########
 
-For each feature (column) `X_col` in the input data, the transformation is:
-1.  `X_std = (X_col - data_min) / (data_max - data_min)`
-    (If `data_max == data_min`, `X_std` is 0 for all values in `X_col`)
-2.  `X_scaled = X_std * (feature_range[2] - feature_range[1]) + feature_range[1]`
-
-# Hyperparameters
-- `feature_range::Tuple{Float64, Float64}`: The desired range for the transformed data.
-  Defaults to `(0.0, 1.0)`.
-"""
-mutable struct MinMaxScaler <: MLJModelInterface.Unsupervised
+mutable struct MinMaxScaler <: MMI.Unsupervised
     feature_range::Tuple{Float64,Float64}
 end
 
 # Keyword constructor
 function MinMaxScaler(; feature_range=(0.0, 1.0))
-    if feature_range[1] > feature_range[2]
-        error(
-            "Upper bound of feature_range ($(feature_range[2])) must be greater than or " *
-            "equal to the lower bound ($(feature_range[1])).",
-        )
+    transformer = MinMaxScaler(feature_range)
+    message = MMI.clean!(transformer)
+    isempty(message) || throw(ArgumentError(message))
+    return transformer
+end
+
+function MMI.clean!(transformer::MinMaxScaler)
+    err = ""
+    if transformer.feature_range[1] > transformer.feature_range[2]
+        err *= "Upper bound of feature_range ($(transformer.feature_range[2])) must be greater than or equal to the lower bound ($(transformer.feature_range[1]))."
     end
-    return MinMaxScaler(feature_range)
+    return err
 end
 
 # Fit method: learns min and max for each feature
-function MLJModelInterface.fit(transformer::MinMaxScaler, verbosity::Int, X)
+function MMI.fit(transformer::MinMaxScaler, verbosity::Int, X)
     # X is assumed to be a Tables.jl compatible table.
     col_names = Tables.columnnames(X)
     all_mins = Float64[]
@@ -66,7 +62,7 @@ function MLJModelInterface.fit(transformer::MinMaxScaler, verbosity::Int, X)
 end
 
 # transform method: applies the scaling
-function MLJModelInterface.transform(transformer::MinMaxScaler, fitresult, X)
+function MMI.transform(transformer::MinMaxScaler, fitresult, X)
     col_names = Tables.columnnames(X)
     data_mins = fitresult.mins
     data_maxs = fitresult.maxs
@@ -112,7 +108,7 @@ function MLJModelInterface.transform(transformer::MinMaxScaler, fitresult, X)
 end
 
 # inverse_transform method: reverses the scaling
-function MLJModelInterface.inverse_transform(transformer::MinMaxScaler, fitresult, Xscaled)
+function MMI.inverse_transform(transformer::MinMaxScaler, fitresult, Xscaled)
     col_names = Tables.columnnames(Xscaled)
     data_mins = fitresult.mins
     data_maxs = fitresult.maxs
@@ -159,56 +155,44 @@ function MLJModelInterface.inverse_transform(transformer::MinMaxScaler, fitresul
     return output_table
 end
 
-# Specify input and output scitypes
-function MLJModelInterface.input_scitype(::Type{<:MinMaxScaler})
-    return MLJModelInterface.Table(MLJModelInterface.Continuous)
-end
-function MLJModelInterface.output_scitype(::Type{<:MinMaxScaler})
-    return MLJModelInterface.Table(MLJModelInterface.Continuous)
-end
-
 # Fitted parameters
-function MLJModelInterface.fitted_params(::MinMaxScaler, fitresult) # TODO: also return names of features that were scaled
+function MMI.fitted_params(::MinMaxScaler, fitresult) # TODO: also return names of features that were scaled
     return (min_values_per_feature=fitresult.mins, max_values_per_feature=fitresult.maxs)
 end
 
-"""
-    QuantileTransformer(; feature_range=(0.0, 1.0))
+# MLJ Traits
+MMI.metadata_model(
+    MinMaxScaler;
+    input_scitype=MMI.Table(MMI.Continuous),
+    output_scitype=MMI.Table(MMI.Continuous),
+    human_name="Min-Max Scaler",
+    load_path="EntropicLearning.Transformers.MinMaxScaler",
+)
 
-An unsupervised model for scaling features to be uniformly distributed over a given range,
-defaulting to [0, 1].
 
-For each feature (column) `X_col` in the input data, the transformation maps each feature to
-a uniform distribution by calculating the empirical cumulative distribution (ECDF) of the
-training data for that feature. Each value is then mapped to its ECDF value (percentile rank).
-These ranks (ranging from 0 to 1) are then linearly scaled to the specified `feature_range`.
-For out-of-sample data, values smaller than the training minimum are mapped to the lower
-bound of `feature_range`, and values larger than the training maximum are mapped to the upper bound.
-Interpolation is used for values falling between learned quantile values.
+######### QuantileTransformer ##########
 
-The inverse transformation maps values from `feature_range` back to the original feature's
-domain using linear interpolation between the quantiles learned during `fit`.
-
-# Hyperparameters
-- `feature_range::Tuple{Float64, Float64}`: The desired range for the transformed data.
-  Defaults to `(0.0, 1.0)`.
-"""
-mutable struct QuantileTransformer <: MLJModelInterface.Unsupervised
+mutable struct QuantileTransformer <: MMI.Unsupervised
     feature_range::Tuple{Float64,Float64}
 end
 
 # Keyword constructor
 function QuantileTransformer(; feature_range=(0.0, 1.0))
-    if feature_range[1] > feature_range[2]
-        error(
-            "Upper bound of feature_range ($(feature_range[2])) must be greater than or " *
-            "equal to the lower bound ($(feature_range[1])).",
-        )
-    end
-    return QuantileTransformer(feature_range)
+    transformer = QuantileTransformer(feature_range)
+    message = MMI.clean!(transformer)
+    isempty(message) || throw(ArgumentError(message))
+    return transformer
 end
 
-function MLJModelInterface.fit(transformer::QuantileTransformer, verbosity::Int, X)
+function MMI.clean!(transformer::QuantileTransformer)
+    err = ""
+    if transformer.feature_range[1] > transformer.feature_range[2]
+        err *= "Upper bound of feature_range ($(transformer.feature_range[2])) must be greater than or equal to the lower bound ($(transformer.feature_range[1]))."
+    end
+    return err
+end
+
+function MMI.fit(transformer::QuantileTransformer, verbosity::Int, X)
     col_names = Tables.columnnames(X)
     quantiles_per_column = Vector{Vector{Float64}}()
 
@@ -235,7 +219,7 @@ function MLJModelInterface.fit(transformer::QuantileTransformer, verbosity::Int,
     return fitresult, cache, report
 end
 
-function MLJModelInterface.transform(transformer::QuantileTransformer, fitresult, Xnew)
+function MMI.transform(transformer::QuantileTransformer, fitresult, Xnew)
     Xnew_col_names = Tables.columnnames(Xnew)
     if Xnew_col_names != fitresult.col_names
         error("Column names in Xnew do not match column names from fitting.")
@@ -336,7 +320,7 @@ function MLJModelInterface.transform(transformer::QuantileTransformer, fitresult
     return output_table
 end
 
-function MLJModelInterface.inverse_transform(
+function MMI.inverse_transform(
     transformer::QuantileTransformer, fitresult, Xtransformed
 )
     Xtransformed_col_names = Tables.columnnames(Xtransformed)
@@ -429,16 +413,253 @@ function MLJModelInterface.inverse_transform(
     return output_table
 end
 
-# MLJ traits
-function MLJModelInterface.input_scitype(::Type{<:QuantileTransformer})
-    return MLJModelInterface.Table(MLJModelInterface.Continuous)
-end
-function MLJModelInterface.target_scitype(::Type{<:QuantileTransformer})
-    return MLJModelInterface.Table(MLJModelInterface.Continuous)
-end
-
-function MLJModelInterface.fitted_params(::QuantileTransformer, fitresult)
+# Fitted parameters
+function MMI.fitted_params(::QuantileTransformer, fitresult)
     return (quantiles_list=fitresult.quantiles_list, col_names=fitresult.col_names)
 end
+
+# MLJ traits
+MMI.metadata_model(
+    QuantileTransformer;
+    input_scitype=MMI.Table(MMI.Continuous),
+    output_scitype=MMI.Table(MMI.Continuous),
+    human_name="Quantile Transformer",
+    load_path="EntropicLearning.Transformers.QuantileTransformer",
+)
+
+######### Documentation ##########
+
+"""
+$(MMI.doc_header(MinMaxScaler))
+
+Use this model to scale features to a given range, defaulting to [0, 1]. Each feature
+is scaled independently using a linear transformation based on the minimum and maximum
+values observed during fitting. The rescalings applied by this transformer to new data
+are always those learned during the training phase. The behaviour of this model is similar
+to that of the `MinMaxScaler` in the `sklearn.preprocessing` Python package.
+
+
+# Training data
+
+In MLJ or MLJBase, bind an instance `model` to data with
+
+    mach = machine(model, X)
+
+where
+
+- `X`: any Tables.jl compatible table or any abstract vector with
+  `Continuous` element scitype (any abstract float vector). Only
+  features in a table with `Continuous` scitype can be scaled;
+  check column scitypes with `schema(X)`.
+
+Train the machine using `fit!(mach, rows=...)`.
+
+
+# Hyper-parameters
+
+- `feature_range::Tuple{Float64, Float64}`: The desired range for the transformed data.
+  Defaults to `(0.0, 1.0)`.
+
+
+# Operations
+
+- `transform(mach, Xnew)`: return `Xnew` with features scaled to the specified
+  `feature_range` according to the min/max values learned during fitting of `mach`.
+  The transformation formula is: `X_scaled = (X - data_min) / (data_max - data_min) * (range_max - range_min) + range_min`.
+  If a feature has constant values (data_max == data_min), all values are mapped to `range_min`.
+
+- `inverse_transform(mach, Z)`: apply the inverse transformation to `Z`, mapping
+  values from `feature_range` back to the original feature domain using the
+  min/max values learned during `fit`.
+
+
+# Fitted parameters
+
+The fields of `fitted_params(mach)` are:
+
+- `min_values_per_feature` - the minimum values for each feature column learned during fitting
+
+- `max_values_per_feature` - the maximum values for each feature column learned during fitting
+
+
+# Examples
+
+```
+using MLJ
+
+# Create example data with different scales
+X = (a = [1.0, 2.0, 3.0, 4.0, 5.0],
+     b = [5.0, 4.0, 3.0, 2.0, 1.0],
+     c = [10.0, 20.0, 30.0, 40.0, 50.0])
+
+julia> schema(X)
+┌───────┬────────────┬─────────┐
+│ names │ scitypes   │ types   │
+├───────┼────────────┼─────────┤
+│ a     │ Continuous │ Float64 │
+│ b     │ Continuous │ Float64 │
+│ c     │ Continuous │ Float64 │
+└───────┴────────────┴─────────┘
+
+# Default scaling to [0, 1]
+scaler = MinMaxScaler()
+mach = machine(scaler, X)
+fit!(mach)
+
+julia> X_transformed = transform(mach, X)
+(a = [0.0, 0.25, 0.5, 0.75, 1.0],
+ b = [1.0, 0.75, 0.5, 0.25, 0.0],
+ c = [0.0, 0.25, 0.5, 0.75, 1.0],)
+
+# Custom feature range
+scaler2 = MinMaxScaler(feature_range=(-1.0, 1.0))
+mach2 = machine(scaler2, X)
+fit!(mach2)
+
+julia> transform(mach2, X)
+(a = [-1.0, -0.5, 0.0, 0.5, 1.0],
+ b = [1.0, 0.5, 0.0, -0.5, -1.0],
+ c = [-1.0, -0.5, 0.0, 0.5, 1.0],)
+
+# Handling constant columns
+X_const = (a = [1.0, 1.0, 1.0], b = [2.0, 3.0, 4.0])
+mach_const = fit!(machine(scaler, X_const))
+
+julia> transform(mach_const, X_const)
+(a = [0.0, 0.0, 0.0],              # constant column mapped to range_min
+ b = [0.0, 0.5, 1.0],)             # regular scaling
+
+# Perfect inverse transformation
+julia> X_restored = inverse_transform(mach, X_transformed)
+(a = [1.0, 2.0, 3.0, 4.0, 5.0],
+ b = [5.0, 4.0, 3.0, 2.0, 1.0],
+ c = [10.0, 20.0, 30.0, 40.0, 50.0],)
+
+# View fitted parameters
+julia> fitted_params(mach)
+(min_values_per_feature = [1.0, 1.0, 10.0],
+ max_values_per_feature = [5.0, 5.0, 50.0],)
+```
+
+See also [`QuantileTransformer`](@ref).
+"""
+MinMaxScaler
+
+
+"""
+$(MMI.doc_header(QuantileTransformer))
+
+Use this model to transform features to be uniformly distributed over a given range,
+defaulting to [0, 1]. This transformation maps each feature to a uniform distribution
+by calculating the empirical cumulative distribution function (ECDF) of the training
+data. The rescalings applied by this transformer to new data are always those learned
+during the training phase. The behaviour of this model is similar to that of the
+`QuantileTransformer` in the `sklearn.preprocessing` Python package.
+
+
+# Training data
+
+In MLJ or MLJBase, bind an instance `model` to data with
+
+    mach = machine(model, X)
+
+where
+
+- `X`: any Tables.jl compatible table or any abstract vector with
+  `Continuous` element scitype (any abstract float vector). Only
+  features in a table with `Continuous` scitype can be transformed;
+  check column scitypes with `schema(X)`.
+
+Train the machine using `fit!(mach, rows=...)`.
+
+
+# Hyper-parameters
+
+- `feature_range::Tuple{Float64, Float64}`: The desired range for the transformed data.
+  Defaults to `(0.0, 1.0)`.
+
+
+# Operations
+
+- `transform(mach, Xnew)`: return `Xnew` with features transformed to uniform
+  distribution over the specified `feature_range` according to the quantiles
+  learned during fitting of `mach`. For out-of-sample values, those smaller than
+  the training minimum are mapped to the lower bound of `feature_range`, and those
+  larger than the training maximum are mapped to the upper bound. Interpolation is
+  used for values falling between learned quantile values.
+
+- `inverse_transform(mach, Z)`: apply the inverse transformation to `Z`, mapping
+  values from `feature_range` back to the original feature domain using linear
+  interpolation between the quantiles learned during `fit`.
+
+
+# Fitted parameters
+
+The fields of `fitted_params(mach)` are:
+
+- `quantiles_list` - vector of quantile arrays, one for each feature column
+
+- `col_names` - the names of features that were fitted
+
+
+# Examples
+
+```
+using MLJ
+
+# Create example data with different patterns
+X = (a = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
+     b = [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0],
+     c = [1.0, 1.0, 1.0, 5.0, 5.0, 5.0, 10.0, 10.0, 10.0, 10.0])
+
+julia> schema(X)
+┌───────┬────────────┬─────────┐
+│ names │ scitypes   │ types   │
+├───────┼────────────┼─────────┤
+│ a     │ Continuous │ Float64 │
+│ b     │ Continuous │ Float64 │
+│ c     │ Continuous │ Float64 │
+└───────┴────────────┴─────────┘
+
+# Default transformation to [0, 1]
+transformer = QuantileTransformer()
+mach = machine(transformer, X)
+fit!(mach)
+
+julia> X_transformed = transform(mach, X)
+(a = [0.0, 0.1111111111111111, 0.2222222222222222, 0.3333333333333333, 0.4444444444444444, 0.5555555555555556, 0.6666666666666666, 0.7777777777777777, 0.8888888888888888, 1.0],
+ b = [1.0, 0.8888888888888888, 0.7777777777777777, 0.6666666666666666, 0.5555555555555556, 0.4444444444444444, 0.3333333333333333, 0.2222222222222222, 0.1111111111111111, 0.0],
+ c = [0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 1.0],)
+
+# Custom feature range
+transformer2 = QuantileTransformer(feature_range=(-1.0, 1.0))
+mach2 = machine(transformer2, X)
+fit!(mach2)
+
+julia> transform(mach2, X)
+(a = [-1.0, -0.7777777777777778, -0.5555555555555556, -0.33333333333333337, -0.11111111111111116, 0.11111111111111116, 0.33333333333333326, 0.5555555555555554, 0.7777777777777777, 1.0],
+ b = [1.0, 0.7777777777777777, 0.5555555555555554, 0.33333333333333326, 0.11111111111111116, -0.11111111111111116, -0.33333333333333337, -0.5555555555555556, -0.7777777777777778, -1.0],
+ c = [-1.0, -1.0, -1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],)
+
+# Out-of-sample data handling
+X_new = (a = [0.0, 5.5, 11.0],
+         b = [12.0, 5.5, -1.0],
+         c = [1.0, 7.0, 10.0])
+
+julia> transform(mach, X_new)
+(a = [0.0, 0.5, 1.0],
+ b = [1.0, 0.5, 0.0],
+ c = [0.0, 0.7, 1.0],)
+
+# Inverse transformation
+julia> X_restored = inverse_transform(mach, X_transformed)
+(a = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 7.999999999999999, 9.0, 10.0],
+ b = [10.0, 9.0, 7.999999999999999, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0],
+ c = [1.0, 1.0, 1.0, 5.0, 5.0, 5.0, 10.0, 10.0, 10.0, 10.0],)
+```
+
+See also [`MinMaxScaler`](@ref).
+"""
+QuantileTransformer
 
 end # module Transformers

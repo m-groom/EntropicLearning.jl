@@ -97,7 +97,7 @@ X = MLJBase.table(X_table)
     end
 
     @testset "Error for invalid feature_range" begin
-        @test_throws ErrorException MinMaxScaler(feature_range=(1.0, 0.0))
+        @test_throws ArgumentError MinMaxScaler(feature_range=(1.0, 0.0))
     end
 
     @testset "Empty column" begin
@@ -252,7 +252,7 @@ end
     end
 
     @testset "Error for invalid feature_range" begin
-        @test_throws ErrorException QuantileTransformer(feature_range=(1.0, 0.0))
+        @test_throws ArgumentError QuantileTransformer(feature_range=(1.0, 0.0))
     end
 
     @testset "Empty column in fit" begin

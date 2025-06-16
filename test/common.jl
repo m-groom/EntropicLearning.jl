@@ -1,8 +1,9 @@
 using Test
-using EntropicLearning
 using LinearAlgebra # For norm, etc.
 using SparseArrays # For sparse matrix tests
 using Statistics # For mean, etc.
+
+include("../src/common/functions.jl")
 
 # Tests for functions in common/functions.jl
 @testset "Common Functions Tests" begin
