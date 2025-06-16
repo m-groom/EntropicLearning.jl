@@ -9,7 +9,6 @@ const MMI = MLJModelInterface
 
 export MinMaxScaler, QuantileTransformer
 
-
 ######### MinMaxScaler ##########
 
 mutable struct MinMaxScaler <: MMI.Unsupervised
@@ -169,7 +168,6 @@ MMI.metadata_model(
     load_path="EntropicLearning.Transformers.MinMaxScaler",
 )
 
-
 ######### QuantileTransformer ##########
 
 mutable struct QuantileTransformer <: MMI.Unsupervised
@@ -320,9 +318,7 @@ function MMI.transform(transformer::QuantileTransformer, fitresult, Xnew)
     return output_table
 end
 
-function MMI.inverse_transform(
-    transformer::QuantileTransformer, fitresult, Xtransformed
-)
+function MMI.inverse_transform(transformer::QuantileTransformer, fitresult, Xtransformed)
     Xtransformed_col_names = Tables.columnnames(Xtransformed)
     if Xtransformed_col_names != fitresult.col_names
         error("Column names in Xtransformed do not match column names from fitting.")
@@ -544,7 +540,6 @@ julia> fitted_params(mach)
 See also [`QuantileTransformer`](@ref).
 """
 MinMaxScaler
-
 
 """
 $(MMI.doc_header(QuantileTransformer))
