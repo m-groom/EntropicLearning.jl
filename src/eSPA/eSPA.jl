@@ -19,7 +19,6 @@ const MMI = MLJModelInterface
 
 export eSPAClassifier
 
-
 MMI.@mlj_model mutable struct eSPAClassifier <: MMI.Probabilistic
     K::Int = 3::(_ > 0)
     epsC::Float64 = 1e-3::(_ >= 0)
@@ -199,7 +198,6 @@ MMI.metadata_model(
     human_name="eSPA Classifier",
     load_path="EntropicLearning.eSPA.eSPAClassifier",
 )
-
 
 ########## Documentation ##########
 
