@@ -18,15 +18,19 @@ function initialise(
 
     # Initialise the feature importance vector
     W = zeros(Tf, D_features)
-    if model.mi_init
-        # Initialise W[d] using the mutural information between feature d and y
-        @inbounds for d in 1:D_features
-            W[d] = mi_continuous_discrete(view(X, d, :), y; n_neighbors=3, rng=rng)
+    if isfinite(model.epsW)
+        if model.mi_init
+            # Initialise W[d] using the mutural information between feature d and y
+            @inbounds for d in 1:D_features
+                W[d] = mi_continuous_discrete(view(X, d, :), y; n_neighbors=3, rng=rng)
+            end
+        else
+            rand!(rng, W)
         end
+        normalise!(W)
     else
-        rand!(rng, W)
+        fill!(W, Tf(1.0) / D_features)
     end
-    normalise!(W)
 
     # Initialise the centroid matrix
     C = zeros(Tf, D_features, K_clusters)
@@ -135,18 +139,23 @@ function update_W!(
     # Get dimensions
     D_features, T_instances = size(X)
 
-    # Calculate the discretisation error for each feature dimension
-    b = zeros(Tf, D_features)   # b[d] will store -sum_t sum_k (X[d,t] - C[d,k]×Γ[k, t])^2
-    # Iterate over instances (columns of X)
-    @inbounds for t in 1:T_instances
-        cluster_idx = G.rowval[t]  # Which cluster instance t belongs to
-        @simd for d in 1:D_features
-            b[d] -= (X[d, t] - C[d, cluster_idx])^2
+    if isfinite(epsW)
+        # Calculate the discretisation error for each feature dimension
+        b = zeros(Tf, D_features)   # b[d] will store -sum_t sum_k (X[d,t] - C[d,k]×Γ[k, t])^2
+        # Iterate over instances (columns of X)
+        @inbounds for t in 1:T_instances
+            cluster_idx = G.rowval[t]  # Which cluster instance t belongs to
+            @simd for d in 1:D_features
+                b[d] -= (X[d, t] - C[d, cluster_idx])^2
+            end
         end
-    end
 
-    # Update W
-    softmax!(W, b; prefactor=Tf(T_instances * epsW))
+        # Update W
+        softmax!(W, b; prefactor=Tf(T_instances * epsW))
+    else
+        # Set W to the uniform distribution
+        fill!(W, Tf(1.0) / D_features)
+    end
     return nothing
 end
 
@@ -203,7 +212,11 @@ function calc_loss(
     class_error = Tf(epsC) * cross_entropy(P, LG; tol=eps(Tf)) # Includes the minus sign
 
     # Calculate the entropy term
-    entr_W = Tf(epsW) * entropy(W; tol=eps(Tf))                # Includes the minus sign
+    if isfinite(epsW)
+        entr_W = Tf(epsW) * entropy(W; tol=eps(Tf))            # Includes the minus sign
+    else
+        entr_W = Tf(0.0)
+    end
 
     # Calculate the loss
     return (disc_error + class_error) / T_instances - entr_W
