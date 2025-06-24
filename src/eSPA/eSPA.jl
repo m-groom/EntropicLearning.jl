@@ -124,7 +124,7 @@ function MMI.fit(model::eSPAClassifier, verbosity::Int, X, y)
             if model.iterative_pred
                 P = Matrix{Tf}(undef, M_classes, T_instances)
                 update_P!(P, L, G)
-                iterative_predict!(P, G, model, X_mat, C, W, L, verbosity=verbosity)
+                iterative_predict!(P, G, model, X_mat, C, W, L; verbosity=verbosity)
             end
 
             # Discard empty boxes
