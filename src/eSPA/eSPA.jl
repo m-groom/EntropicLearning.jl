@@ -72,15 +72,14 @@ function MMI.fit(model::eSPAClassifier, verbosity::Int, X, y)
             model, X_mat, y_int, D_features, T_instances, M_classes; rng=rng
         )
         K_current = size(C, 2)                  # Current number of clusters
-        loss = fill(Inf, model.max_iter + 1)    # Loss for each iteration
+        loss = fill(Tf(Inf), model.max_iter + 1)    # Loss for each iteration
         iter = 0                                # Iteration counter
         loss[1] = calc_loss(X_mat, Pi_mat, C, W, L, G, model.epsC, model.epsW)
     end
 
     # --- Main Optimisation Loop ---
     @timeit to "Training" begin
-        while (iter == 0 || abs((loss[iter + 1] - loss[iter]) / loss[iter]) > model.tol) &&
-            iter < model.max_iter
+        while !converged(loss, iter, model.max_iter, model.tol)
             # Update iteration counter
             iter += 1
 
@@ -109,16 +108,12 @@ function MMI.fit(model::eSPAClassifier, verbosity::Int, X, y)
             )
 
             # Check if loss function has increased
-            if loss[iter + 1] - loss[iter] > eps(Tf) && verbosity > 0
-                @warn "Loss function has increased at iteration $iter by $(loss[iter + 1] - loss[iter])"
-            end
+            check_loss(loss, iter, verbosity)
         end
     end
 
     # Warn if the maximum number of iterations was reached
-    if iter >= model.max_iter && verbosity > 0
-        @warn "Maximum number of iterations reached"
-    end
+    check_iter(iter, model.max_iter, verbosity)
 
     # --- Unbiasing step ---
     @timeit to "Unbias" begin
@@ -126,9 +121,11 @@ function MMI.fit(model::eSPAClassifier, verbosity::Int, X, y)
             # Unbias Γ
             update_G!(G, X_mat, Pi_mat, C, W, L, Tf(0.0))
 
-            # if model.iterative_pred
-            #     # TODO: implement iterative prediction
-            # end
+            if model.iterative_pred
+                P = Matrix{Tf}(undef, M_classes, T_instances)
+                update_P!(P, L, G)
+                iterative_predict!(P, G, model, X_mat, C, W, L, verbosity=verbosity)
+            end
 
             # Discard empty boxes
             notEmpty, K_new = find_empty(G)
@@ -137,8 +134,10 @@ function MMI.fit(model::eSPAClassifier, verbosity::Int, X, y)
                 K_current = copy(K_new)
             end
 
-            # Unbias Λ - TODO: this should only be done if iterative_pred is false
-            update_L!(L, Pi_mat, G)
+            if !model.iterative_pred
+                # Unbias Λ
+                update_L!(L, Pi_mat, G)
+            end
         end
     end
 
@@ -155,12 +154,7 @@ function MMI.predict(model::eSPAClassifier, fitresult::eSPAFitResult, Xnew)
     # TODO: write a data front-end
     X_mat = MMI.matrix(Xnew; transpose=true)
 
-    # Get dimensions
-    T_instances = size(X_mat, 2)
-    M_classes = length(fitresult.classes)
-
-    Pi_new = _predict_proba(model, fitresult, X_mat)
-    @assert size(Pi_new) == (M_classes, T_instances)
+    Pi_new = predict_proba(model, fitresult, X_mat)
     probabilities = collect(Pi_new')
 
     if size(probabilities, 1) == 0 || size(probabilities, 2) == 0

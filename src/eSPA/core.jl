@@ -104,7 +104,7 @@ end
 # Find any empty clusters
 function find_empty(G::SparseMatrixCSC{Bool,Int})
     sumG = sum(G; dims=2)       # Number of instances in each cluster
-    notEmpty = sumG .> eps()  # Find any empty boxes
+    notEmpty = sumG .> eps()    # Find any empty boxes
     K_new = sum(notEmpty)       # Number of non-empty boxes
     return notEmpty, K_new
 end
@@ -225,7 +225,7 @@ function update_P!(
 end
 
 # Prediction function
-function _predict_proba(
+function predict_proba(
     model::eSPAClassifier, fitresult::eSPAFitResult, X::AbstractMatrix{Tf}
 ) where {Tf<:AbstractFloat}
     # Get dimensions
@@ -253,10 +253,83 @@ function _predict_proba(
     update_P!(P, fitresult.L, G)
 
     if model.iterative_pred
-        # TODO: implement iterative prediction
-        error("Iterative prediction not yet implemented")
+        iterative_predict!(P, G, model, X, fitresult.C, fitresult.W, fitresult.L)
     end
 
     # Return Π (TODO: also return Γ and store it in the report)
     return P
+end
+
+# Iterative prediction function
+function iterative_predict!(
+    P::AbstractMatrix{Tf},
+    G::SparseMatrixCSC{Bool,Int},
+    model::eSPAClassifier,
+    X::AbstractMatrix{Tf},
+    C::AbstractMatrix{Tf},
+    W::AbstractVector{Tf},
+    L::AbstractMatrix{Tf};
+    verbosity::Int=0,
+) where {Tf<:AbstractFloat}
+    iter = 0                                # Iteration counter
+    loss = fill(Tf(Inf), model.max_iter + 1)    # Loss for each iteration
+    loss[1] = calc_loss(X, P, C, W, L, G, model.epsC, model.epsW)
+    while !converged(loss, iter, model.max_iter, model.tol)
+        # Update iteration counter
+        iter += 1
+
+        # Update Γ
+        update_G!(G, X, P, C, W, L, model.epsC)
+
+        # Update Π
+        update_P!(P, L, G)
+
+        # Calculate the loss
+        loss[iter + 1] = calc_loss(X, P, C, W, L, G, model.epsC, model.epsW)
+
+        # Check if loss function has increased
+        check_loss(loss, iter, verbosity; context="iterative prediction")
+    end
+
+    # Warn if the maximum number of iterations was reached
+    check_iter(iter, model.max_iter, verbosity; context="iterative prediction")
+    return nothing
+end
+
+# Function to check for convergence
+function converged(
+    loss::AbstractVector{<:AbstractFloat}, iter::Int, max_iter::Int, tol::Float64
+)
+    # Check if max iterations reached
+    if iter >= max_iter
+        return true
+    end
+
+    # The first iteration (iter=0) is never converged
+    if iter == 0
+        return false
+    end
+
+    # Check for convergence based on relative loss change
+    return abs((loss[iter + 1] - loss[iter]) / loss[iter]) <= tol
+end
+
+# Function to check if the loss has increased
+function check_loss(
+    loss::AbstractVector{Tf}, iter::Int, verbosity::Int; context::String=""
+) where {Tf<:AbstractFloat}
+    if verbosity > 0 && loss[iter + 1] - loss[iter] > eps(Tf)
+        msg = isempty(context) ? "" : " in $context"
+        @warn "Loss function$msg has increased at iteration $iter by $(loss[iter + 1] - loss[iter])"
+    end
+    return nothing
+end
+
+# Function to check if the maximum number of iterations has been reached
+function check_iter(iter::Int, max_iter::Int, verbosity::Int; context::String="")
+    if verbosity > 0 && iter >= max_iter
+        msg = isempty(context) ? "" : " in $context"
+        @warn "Maximum number of iterations reached$msg"
+    end
+    return nothing
 end
