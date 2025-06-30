@@ -2,12 +2,23 @@ using Test
 using Random
 using EntropicLearning
 using LinearAlgebra
+using SparseArrays
 using NearestNeighbors: KDTree, knn, inrange, Chebyshev
 using SpecialFunctions: digamma
 using Statistics: mean, std
+using MLJBase
+using StatsBase: sample
+using Clustering: initseeds!, KmppAlg, copyseeds!
+using Clustering.Distances: SqEuclidean, WeightedSqEuclidean
 
-# Include the extras module functions
+# Access eSPA module
+import EntropicLearning.eSPA as eSPA
+using EntropicLearning.eSPA: eSPAFitResult
+
+# Include the core and extras module functions
+include("../src/eSPA/core.jl")
 include("../src/eSPA/extras.jl")
+
 
 @testset "extras" begin
     @testset "mi_continuous_discrete function tests" begin
@@ -356,4 +367,456 @@ include("../src/eSPA/extras.jl")
             @test mi_single[1] == 0.0 # Should be 0 for single sample
         end
     end
+end
+
+@testset "core" begin
+    # Test data generation
+    X, y = MLJBase.make_blobs(100, 3; centers=3, rng=123, as_table=false)
+    X_transposed = X'  # Transpose for core functions which expect (D, T) format
+
+    # Basic setup
+    D_features, T_instances = size(X_transposed)
+    classes = unique(y)
+    M_classes = length(classes)
+    y_int = [findfirst(==(yi), classes) for yi in y]
+
+    # Create one-hot encoded targets
+    P = zeros(Float64, M_classes, T_instances)
+    for t in 1:T_instances
+        P[y_int[t], t] = 1.0
+    end
+
+    @testset "1. Initialization Functions" begin
+        @testset "initialise function" begin
+            # Test with different initialization modes
+            for (mi_init, kpp_init) in [(true, true), (true, false), (false, true), (false, false)]
+                model = eSPAClassifier(K=3, mi_init=mi_init, kpp_init=kpp_init, random_state=42)
+
+                C, W, L, G = eSPA.initialise(
+                    model, X_transposed, y_int, D_features, T_instances, M_classes
+                )
+
+                # Test dimensions
+                @test size(C) == (D_features, 3)
+                @test size(W) == (D_features,)
+                @test size(L) == (M_classes, 3)
+                @test size(G) == (3, T_instances)
+
+                # Test W properties
+                @test all(W .>= 0)
+                @test sum(W) ≈ 1.0 atol=1e-10
+
+                # Test L properties (left stochastic)
+                @test all(L .>= 0)
+                @test all(sum(L; dims=1) .≈ 1.0)
+
+                # Test G properties (sparse assignment matrix)
+                @test all(sum(G; dims=1) .== 1)
+                @test nnz(G) == T_instances
+            end
+
+            # Test edge case: K=1
+            model_k1 = eSPAClassifier(K=1, random_state=42)
+            C, W, L, G = eSPA.initialise(
+                model_k1, X_transposed, y_int, D_features, T_instances, M_classes
+            )
+            @test size(C) == (D_features, 1)
+            @test all(G.rowval .== 1)  # All points assigned to cluster 1
+
+            # Test reproducibility
+            model1 = eSPAClassifier(K=3, random_state=42)
+            model2 = eSPAClassifier(K=3, random_state=42)
+
+            C1, W1, L1, G1 = eSPA.initialise(model1, X_transposed, y_int, D_features, T_instances, M_classes)
+            C2, W2, L2, G2 = eSPA.initialise(model2, X_transposed, y_int, D_features, T_instances, M_classes)
+
+            @test C1 ≈ C2
+            @test W1 ≈ W2
+            @test L1 ≈ L2
+            @test G1.rowval == G2.rowval
+        end
+    end
+
+    # @testset "2. Core Update Functions" begin
+    #     # Setup for update function tests
+    #     model = eSPAClassifier(K=3, epsC=1e-3, epsW=1e-1, random_state=42)
+    #     rng = Random.MersenneTwister(42)
+    #     C, W, L, G = eSPA.initialise(model, X_transposed, y_int, D_features, T_instances, M_classes; rng=rng)
+
+    #     @testset "update_G! tests" begin
+    #         G_orig = copy(G)
+    #         P_test = copy(P)
+    #         loss_before = eSPA.calc_loss(X_transposed, P_test, C, W, L, G, model.epsC, model.epsW)
+
+    #         eSPA.update_G!(G, X_transposed, P_test, C, W, L, model.epsC)
+
+    #         # Test that G remains valid assignment matrix
+    #         @test all(sum(G; dims=1) .== 1)
+    #         @test size(G) == (3, T_instances)
+    #         @test nnz(G) == T_instances
+
+    #         # Test that loss doesn't increase significantly
+    #         loss_after = eSPA.calc_loss(X_transposed, P_test, C, W, L, G, model.epsC, model.epsW)
+    #         @test loss_after <= loss_before + 1e-10
+
+    #         # Test with epsC = 0.0
+    #         G_zero = copy(G_orig)
+    #         eSPA.update_G!(G_zero, X_transposed, P_test, C, W, L, 0.0)
+    #         @test all(sum(G_zero; dims=1) .== 1)
+    #     end
+
+    #     @testset "update_W! tests" begin
+    #         W_orig = copy(W)
+    #         loss_before = eSPA.calc_loss(X_transposed, P, C, W, L, G, model.epsC, model.epsW)
+
+    #         eSPA.update_W!(W, X_transposed, C, G, model.epsW)
+
+    #         # Test W properties
+    #         @test all(W .>= 0)
+    #         @test sum(W) ≈ 1.0 atol=1e-10
+
+    #         # Test that loss doesn't increase significantly
+    #         loss_after = eSPA.calc_loss(X_transposed, P, C, W, L, G, model.epsC, model.epsW)
+    #         @test loss_after <= loss_before + 1e-10
+
+    #         # Test infinite epsW case (uniform distribution)
+    #         W_inf = copy(W_orig)
+    #         eSPA.update_W!(W_inf, X_transposed, C, G, Inf)
+    #         @test all(W_inf .≈ 1.0/D_features)
+    #     end
+
+    #     @testset "update_C! tests" begin
+    #         C_orig = copy(C)
+    #         loss_before = eSPA.calc_loss(X_transposed, P, C, W, L, G, model.epsC, model.epsW)
+
+    #         eSPA.update_C!(C, X_transposed, G)
+
+    #         # Test dimensions
+    #         @test size(C) == (D_features, 3)
+
+    #         # Test that loss doesn't increase significantly
+    #         loss_after = eSPA.calc_loss(X_transposed, P, C, W, L, G, model.epsC, model.epsW)
+    #         @test loss_after <= loss_before + 1e-10
+    #     end
+
+    #     @testset "update_L! tests" begin
+    #         L_orig = copy(L)
+    #         loss_before = eSPA.calc_loss(X_transposed, P, C, W, L, G, model.epsC, model.epsW)
+
+    #         eSPA.update_L!(L, P, G)
+
+    #         # Test L properties
+    #         @test all(L .>= 0)
+    #         @test all(sum(L; dims=1) .≈ 1.0)
+    #         @test size(L) == (M_classes, 3)
+
+    #         # Test that loss doesn't increase significantly
+    #         loss_after = eSPA.calc_loss(X_transposed, P, C, W, L, G, model.epsC, model.epsW)
+    #         @test loss_after <= loss_before + 1e-10
+    #     end
+
+    #     @testset "update_P! tests" begin
+    #         P_test = Matrix{Float64}(undef, M_classes, T_instances)
+    #         eSPA.update_P!(P_test, L, G)
+
+    #         # Test P properties
+    #         @test all(P_test .>= 0)
+    #         @test all(sum(P_test; dims=1) .≈ 1.0)
+    #         @test size(P_test) == (M_classes, T_instances)
+    #     end
+    # end
+
+    # @testset "3. Loss and Convergence Functions" begin
+    #     model = eSPAClassifier(K=3, epsC=1e-3, epsW=1e-1, random_state=42)
+    #     rng = Random.MersenneTwister(42)
+    #     C, W, L, G = eSPA.initialise(model, X_transposed, y_int, D_features, T_instances, M_classes; rng=rng)
+
+    #     @testset "calc_loss tests" begin
+    #         loss = eSPA.calc_loss(X_transposed, P, C, W, L, G, model.epsC, model.epsW)
+
+    #         @test isfinite(loss)
+    #         @test isa(loss, Float64)
+
+    #         # Test with different regularization parameters
+    #         loss_zero = eSPA.calc_loss(X_transposed, P, C, W, L, G, 0.0, model.epsW)
+    #         @test isfinite(loss_zero)
+
+    #         loss_inf = eSPA.calc_loss(X_transposed, P, C, W, L, G, model.epsC, Inf)
+    #         @test isfinite(loss_inf)
+    #     end
+
+    #     @testset "Convergence helper functions" begin
+    #         # Test converged function
+    #         loss_seq = [10.0, 5.0, 2.0, 1.9, 1.89, 1.889]
+    #         @test !eSPA.converged(loss_seq, 0, 100, 1e-6)  # iter=0 never converged
+    #         @test !eSPA.converged(loss_seq, 3, 100, 1e-6)  # Not converged yet
+    #         @test eSPA.converged(loss_seq, 5, 100, 1e-6)   # Should be converged
+    #         @test eSPA.converged(loss_seq, 5, 5, 1e-6)     # Max iter reached
+
+    #         # Test check functions (should not error)
+    #         @test_nowarn eSPA.check_loss(loss_seq, 3, 0)
+    #         @test_nowarn eSPA.check_iter(100, 100, 0)
+    #     end
+    # end
+
+    # @testset "4. Cluster Management Functions" begin
+    #     # Create test data with some empty clusters
+    #     K_test = 5
+    #     T_test = 20
+    #     G_test = spzeros(Bool, K_test, T_test)
+    #     # Assign points to only clusters 1, 3, 4 (leaving 2 and 5 empty)
+    #     for t in 1:T_test
+    #         cluster = t <= 5 ? 1 : (t <= 10 ? 3 : 4)
+    #         G_test[cluster, t] = true
+    #     end
+
+    #     @testset "find_empty tests" begin
+    #         notEmpty, K_new = eSPA.find_empty(G_test)
+    #         @test K_new == 3  # Only 3 non-empty clusters
+    #         @test notEmpty == [true, false, true, true, false]
+
+    #         # Test all empty case
+    #         G_empty = spzeros(Bool, 3, 10)
+    #         notEmpty_empty, K_empty = eSPA.find_empty(G_empty)
+    #         @test K_empty == 0
+    #         @test all(.!notEmpty_empty)
+
+    #         # Test none empty case
+    #         G_full = sparse([1, 2, 3], [1, 2, 3], [true, true, true], 3, 3)
+    #         notEmpty_full, K_full = eSPA.find_empty(G_full)
+    #         @test K_full == 3
+    #         @test all(notEmpty_full)
+    #     end
+
+    #     @testset "remove_empty tests" begin
+    #         C_test = randn(D_features, K_test)
+    #         L_test = rand(M_classes, K_test)
+    #         left_stochastic!(L_test)
+
+    #         notEmpty, K_new = eSPA.find_empty(G_test)
+    #         C_new, L_new, G_new = eSPA.remove_empty(C_test, L_test, G_test, notEmpty)
+
+    #         # Test dimensions after removal
+    #         @test size(C_new) == (D_features, K_new)
+    #         @test size(L_new) == (M_classes, K_new)
+    #         @test size(G_new) == (K_new, T_test)
+
+    #         # Test that data is preserved correctly
+    #         @test all(sum(G_new; dims=1) .== 1)
+    #         @test all(sum(L_new; dims=1) .≈ 1.0)
+    #     end
+    # end
+
+    # @testset "5. Prediction Functions" begin
+    #     # Create training data using MLJ format
+    #     X_train, y_train = MLJBase.make_blobs(30, 3; centers=2, rng=42, as_table=false)
+    #     X_table = MLJBase.table(X_train)
+    #     y_categorical = MLJBase.categorical(y_train)
+
+    #     # Train a model using MLJ interface
+    #     model = eSPAClassifier(K=3, epsC=1e-3, epsW=1e-1, max_iter=10, random_state=42)
+    #     mach = MLJBase.machine(model, X_table, y_categorical)
+    #     MLJBase.fit!(mach, verbosity=0)
+
+    #     @testset "predict_proba tests" begin
+    #         # Test prediction on subset of training data
+    #         X_test_subset = X_table[1:10]
+    #         y_pred = MLJBase.predict(mach, X_test_subset)
+
+    #         # Test output properties
+    #         @test length(y_pred) == 10
+    #         # Test that each prediction is a valid probability distribution
+    #         for pred in y_pred
+    #             @test sum(MLJBase.pdf(pred, MLJBase.classes(pred))) ≈ 1.0
+    #         end
+
+    #         # Test with iterative prediction
+    #         model_iter = eSPAClassifier(K=3, iterative_pred=true, max_iter=5, random_state=42)
+    #         mach_iter = MLJBase.machine(model_iter, X_table, y_categorical)
+    #         MLJBase.fit!(mach_iter, verbosity=0)
+
+    #         y_pred_iter = MLJBase.predict(mach_iter, X_test_subset)
+    #         @test length(y_pred_iter) == 10
+    #         # Test that each prediction is a valid probability distribution
+    #         for pred in y_pred_iter
+    #             @test sum(MLJBase.pdf(pred, MLJBase.classes(pred))) ≈ 1.0
+    #         end
+    #     end
+    # end
+
+    # @testset "6. Integration and Property Tests" begin
+    #     @testset "Monotonic loss decrease" begin
+    #         model = eSPAClassifier(K=3, epsC=1e-3, epsW=1e-1, random_state=42)
+    #         rng = Random.MersenneTwister(42)
+    #         C, W, L, G = eSPA.initialise(model, X_transposed, y_int, D_features, T_instances, M_classes; rng=rng)
+
+    #         # Test complete update cycle
+    #         initial_loss = eSPA.calc_loss(X_transposed, P, C, W, L, G, model.epsC, model.epsW)
+    #         losses = [initial_loss]
+
+    #         for iter in 1:3
+    #             # Update G
+    #             eSPA.update_G!(G, X_transposed, P, C, W, L, model.epsC)
+    #             notEmpty, K_new = eSPA.find_empty(G)
+    #             if K_new < size(G, 1)
+    #                 C, L, G = eSPA.remove_empty(C, L, G, notEmpty)
+    #             end
+    #             loss_after_G = eSPA.calc_loss(X_transposed, P, C, W, L, G, model.epsC, model.epsW)
+
+    #             # Update W
+    #             eSPA.update_W!(W, X_transposed, C, G, model.epsW)
+    #             loss_after_W = eSPA.calc_loss(X_transposed, P, C, W, L, G, model.epsC, model.epsW)
+
+    #             # Update C
+    #             eSPA.update_C!(C, X_transposed, G)
+    #             loss_after_C = eSPA.calc_loss(X_transposed, P, C, W, L, G, model.epsC, model.epsW)
+
+    #             # Update L
+    #             eSPA.update_L!(L, P, G)
+    #             final_loss = eSPA.calc_loss(X_transposed, P, C, W, L, G, model.epsC, model.epsW)
+
+    #             # Test each step doesn't increase loss significantly
+    #             @test loss_after_G <= losses[end] + 1e-10
+    #             @test loss_after_W <= loss_after_G + 1e-10
+    #             @test loss_after_C <= loss_after_W + 1e-10
+    #             @test final_loss <= loss_after_C + 1e-10
+
+    #             push!(losses, final_loss)
+    #         end
+
+    #         # Test overall decrease
+    #         @test losses[end] <= losses[1] + 1e-10
+    #     end
+
+    #     @testset "Matrix property preservation" begin
+    #         model = eSPAClassifier(K=3, epsC=1e-3, epsW=1e-1, random_state=42)
+    #         rng = Random.MersenneTwister(42)
+    #         C, W, L, G = eSPA.initialise(model, X_transposed, y_int, D_features, T_instances, M_classes; rng=rng)
+
+    #         # Run several update cycles and check properties
+    #         for _ in 1:5
+    #             eSPA.update_G!(G, X_transposed, P, C, W, L, model.epsC)
+    #             @test all(sum(G; dims=1) .== 1)  # G assignment property
+    #             @test nnz(G) == T_instances  # G sparsity
+
+    #             eSPA.update_W!(W, X_transposed, C, G, model.epsW)
+    #             @test sum(W) ≈ 1.0 atol=1e-10  # W normalization
+    #             @test all(W .>= 0)  # W non-negativity
+
+    #             eSPA.update_C!(C, X_transposed, G)
+    #             @test size(C) == (D_features, size(G, 1))  # C dimensions
+
+    #             eSPA.update_L!(L, P, G)
+    #             @test all(sum(L; dims=1) .≈ 1.0)  # L left stochastic
+    #             @test all(L .>= 0)  # L non-negativity
+    #         end
+    #     end
+
+    #     @testset "Edge cases" begin
+    #         # Test K=1 (single cluster)
+    #         model_k1 = eSPAClassifier(K=1, epsC=1e-3, epsW=1e-1, random_state=42)
+    #         rng = Random.MersenneTwister(42)
+    #         C, W, L, G = eSPA.initialise(model_k1, X_transposed, y_int, D_features, T_instances, M_classes; rng=rng)
+
+    #         @test_nowarn eSPA.update_G!(G, X_transposed, P, C, W, L, model_k1.epsC)
+    #         @test_nowarn eSPA.update_W!(W, X_transposed, C, G, model_k1.epsW)
+    #         @test_nowarn eSPA.update_C!(C, X_transposed, G)
+    #         @test_nowarn eSPA.update_L!(L, P, G)
+    #         @test all(G.rowval .== 1)
+
+    #         # Test extreme regularization: ε_C = 0, ε_W = Inf (should behave like k-means)
+    #         model_kmeans = eSPAClassifier(K=3, epsC=0.0, epsW=Inf, kpp_init=true, mi_init=false, random_state=42)
+    #         rng_kmeans = Random.MersenneTwister(42)
+    #         C_km, W_km, L_km, G_km = eSPA.initialise(model_kmeans, X_transposed, y_int, D_features, T_instances, M_classes; rng=rng_kmeans)
+
+    #         # W should be uniform for epsW = Inf
+    #         @test all(W_km .≈ 1.0/D_features)
+
+    #         # Run updates
+    #         for _ in 1:3
+    #             eSPA.update_G!(G_km, X_transposed, P, C_km, W_km, L_km, 0.0)
+    #             eSPA.update_W!(W_km, X_transposed, C_km, G_km, Inf)
+    #             eSPA.update_C!(C_km, X_transposed, G_km)
+    #             eSPA.update_L!(L_km, P, G_km)
+
+    #             # W should remain uniform
+    #             @test all(W_km .≈ 1.0/D_features)
+    #         end
+    #     end
+    # end
+
+    # @testset "7. Reproducibility and Robustness" begin
+    #     @testset "Deterministic behavior" begin
+    #         # Test same RNG seeds produce identical results
+    #         model = eSPAClassifier(K=3, epsC=1e-3, epsW=1e-1, random_state=42)
+
+    #         rng1 = Random.MersenneTwister(123)
+    #         C1, W1, L1, G1 = eSPA.initialise(model, X_transposed, y_int, D_features, T_instances, M_classes; rng=rng1)
+
+    #         rng2 = Random.MersenneTwister(123)
+    #         C2, W2, L2, G2 = eSPA.initialise(model, X_transposed, y_int, D_features, T_instances, M_classes; rng=rng2)
+
+    #         @test C1 ≈ C2
+    #         @test W1 ≈ W2
+    #         @test L1 ≈ L2
+    #         @test G1.rowval == G2.rowval
+
+    #         # Test updates are deterministic
+    #         eSPA.update_G!(G1, X_transposed, P, C1, W1, L1, model.epsC)
+    #         eSPA.update_G!(G2, X_transposed, P, C2, W2, L2, model.epsC)
+    #         @test G1.rowval == G2.rowval
+    #     end
+
+    #     @testset "Reproducible affiliations" begin
+    #         # Create training data using MLJ format
+    #         X_train, y_train = MLJBase.make_blobs(50, 3; centers=2, rng=42, as_table=false)
+    #         X_table = MLJBase.table(X_train)
+    #         y_categorical = MLJBase.categorical(y_train)
+
+    #         # Test unbias=true case
+    #         model_unbias = eSPAClassifier(K=3, epsC=1e-3, epsW=1e-1, max_iter=5, unbias=true, random_state=42)
+    #         mach_unbias = MLJBase.machine(model_unbias, X_table, y_categorical)
+    #         MLJBase.fit!(mach_unbias, verbosity=0)
+
+    #         # Test prediction on training data
+    #         y_pred_unbias = MLJBase.predict(mach_unbias, X_table)
+    #         @test length(y_pred_unbias) == length(y_categorical)
+    #         # Test that each prediction is a valid probability distribution
+    #         for pred in y_pred_unbias
+    #             @test sum(MLJBase.pdf(pred, MLJBase.classes(pred))) ≈ 1.0
+    #         end
+
+    #         # Test unbias=true + iterative_pred=true case
+    #         model_iter = eSPAClassifier(K=3, epsC=1e-3, epsW=1e-1, max_iter=5, unbias=true,
+    #                                    iterative_pred=true, random_state=42)
+    #         mach_iter = MLJBase.machine(model_iter, X_table, y_categorical)
+    #         MLJBase.fit!(mach_iter, verbosity=0)
+
+    #         # Test prediction on training data
+    #         y_pred_iter = MLJBase.predict(mach_iter, X_table)
+    #         @test length(y_pred_iter) == length(y_categorical)
+    #         # Test that each prediction is a valid probability distribution
+    #         for pred in y_pred_iter
+    #             @test sum(MLJBase.pdf(pred, MLJBase.classes(pred))) ≈ 1.0
+    #         end
+
+    #         # Test reproducibility: same model parameters should give same results
+    #         model_repro = eSPAClassifier(K=3, epsC=1e-3, epsW=1e-1, max_iter=5, unbias=true, random_state=42)
+    #         mach_repro = MLJBase.machine(model_repro, X_table, y_categorical)
+    #         MLJBase.fit!(mach_repro, verbosity=0)
+
+    #         y_pred_repro = MLJBase.predict(mach_repro, X_table)
+
+    #         # Check that predictions are reproducible (same random_state should give same results)
+    #         @test length(y_pred_repro) == length(y_pred_unbias)
+
+    #         # Extract fitted parameters to verify internal consistency
+    #         fitted_params_unbias = MLJBase.fitted_params(mach_unbias)
+    #         fitted_params_repro = MLJBase.fitted_params(mach_repro)
+
+    #         @test fitted_params_unbias.C ≈ fitted_params_repro.C
+    #         @test fitted_params_unbias.W ≈ fitted_params_repro.W
+    #         @test fitted_params_unbias.L ≈ fitted_params_repro.L
+    #     end
+    # end
 end

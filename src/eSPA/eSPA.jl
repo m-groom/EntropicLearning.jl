@@ -46,8 +46,7 @@ include("extras.jl")
 
 # MLJ Interface
 function MMI.fit(model::eSPAClassifier, verbosity::Int, X, y)
-    # Initialise the random number generator and timer
-    rng = _get_rng(model.random_state)
+    # Initialise the timer
     to = TimerOutput()
 
     # TODO: write a data front-end
@@ -69,7 +68,7 @@ function MMI.fit(model::eSPAClassifier, verbosity::Int, X, y)
     # --- Initialization ---
     @timeit to "Initialisation" begin
         C, W, L, G = initialise(
-            model, X_mat, y_int, D_features, T_instances, M_classes; rng=rng
+            model, X_mat, y_int, D_features, T_instances, M_classes
         )
         K_current = size(C, 2)                  # Current number of clusters
         loss = fill(Tf(Inf), model.max_iter + 1)    # Loss for each iteration

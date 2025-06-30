@@ -7,14 +7,16 @@ function initialise(
     y::AbstractVector{Ti},
     D_features::Int,
     T_instances::Int,
-    M_classes::Int;
-    rng::AbstractRNG=Random.default_rng(),
+    M_classes::Int,
 ) where {Tf<:AbstractFloat,Ti<:Integer}
     # Get number of clusters
     K_clusters = model.K
     @assert K_clusters <= T_instances (
         "Number of clusters must be less than or equal to the number of instances"
     )
+
+    # Initialise the random number generator
+    rng = get_rng(model.random_state)
 
     # Initialise the feature importance vector
     W = zeros(Tf, D_features)
@@ -42,7 +44,7 @@ function initialise(
             initseeds!(iseeds, KmppAlg(), X, SqEuclidean(); rng=rng)
         end
     else    # Randomly select K data points as centroids
-        iseeds = StatsBase.sample(rng, 1:T_instances, K_clusters; replace=false)
+        iseeds = sample(rng, 1:T_instances, K_clusters; replace=false)
     end
     copyseeds!(C, X, iseeds)
 
@@ -247,7 +249,7 @@ function predict_proba(
     M_classes = size(fitresult.L, 1)
 
     # Initialise the random number generator
-    rng = _get_rng(model.random_state)
+    rng = get_rng(model.random_state)
 
     # Initialise Γ and Π
     G = sparse(
