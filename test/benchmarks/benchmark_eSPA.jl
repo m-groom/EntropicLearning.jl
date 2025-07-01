@@ -209,7 +209,7 @@ function analyze_scaling(results::Vector{BenchmarkResult}, param::Symbol)
 
     denom = sum((x_vals .- x_mean) .^ 2)
     if denom < 1e-15
-        # Constant x values - should not happen with our test setup
+        # Constant x values
         return (slope=0.0, intercept=y_mean, r_squared=0.0)
     end
 
