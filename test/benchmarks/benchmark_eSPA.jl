@@ -203,7 +203,13 @@ function benchmark_function_with_memory(
     end
 
     return BenchmarkResult(
-        func_name, D, T, times, sanitise(median(times)), sanitise(std(times)), Int(median(memories))
+        func_name,
+        D,
+        T,
+        times,
+        sanitise(median(times)),
+        sanitise(std(times)),
+        Int(median(memories)),
     )
 end
 
@@ -627,7 +633,8 @@ function save_results_to_json(all_results, all_analyses)
                     "to_T" => curr.T,
                     "parameter_ratio" => safe_ratio(curr.T, prev.T),
                     "time_ratio" => safe_ratio(curr.time_median, prev.time_median),
-                    "memory_ratio" => safe_ratio(curr.memory_allocated, prev.memory_allocated),
+                    "memory_ratio" =>
+                        safe_ratio(curr.memory_allocated, prev.memory_allocated),
                 ),
             )
         end
@@ -642,7 +649,8 @@ function save_results_to_json(all_results, all_analyses)
                     "to_D" => curr.D,
                     "parameter_ratio" => safe_ratio(curr.D, prev.D),
                     "time_ratio" => safe_ratio(curr.time_median, prev.time_median),
-                    "memory_ratio" => safe_ratio(curr.memory_allocated, prev.memory_allocated),
+                    "memory_ratio" =>
+                        safe_ratio(curr.memory_allocated, prev.memory_allocated),
                 ),
             )
         end
