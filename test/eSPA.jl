@@ -856,4 +856,49 @@ end
         # Check that assignments are the same
         @test report.G.rowval == KMeansResult.assignments
     end
+
+    @testset "9. MLJ Interface" begin
+        # Train a model using MLJ interface
+        model = eSPAClassifier(K=K_clusters, epsC=1e-3, epsW=1e-1, random_state=42)
+        mach = MLJBase.machine(model, X_table, y_cat)
+        MLJBase.fit!(mach, verbosity=0)
+        fitresult = mach.fitresult
+        report = MLJBase.report(mach)
+
+        @testset "fitted_params tests" begin
+            fitted_params_result = MLJBase.fitted_params(mach)
+
+            # Test that all required fields are present
+            @test haskey(fitted_params_result, :C)
+            @test haskey(fitted_params_result, :W)
+            @test haskey(fitted_params_result, :L)
+
+            # Test that fitted parameters match fitresult
+            @test fitted_params_result.C == fitresult.C
+            @test fitted_params_result.W == fitresult.W
+            @test fitted_params_result.L == fitresult.L
+        end
+
+        @testset "feature_importances tests" begin
+            feature_importances_result = MLJBase.feature_importances(model, fitresult, report)
+
+            # Test that result is a vector of pairs
+            @test isa(feature_importances_result, Vector)
+            @test length(feature_importances_result) == D_features
+
+            # Test that each element is a Pair with Symbol => Float64
+            for (i, pair) in enumerate(feature_importances_result)
+                @test isa(pair, Pair)
+                @test isa(pair.first, Symbol)
+                @test isa(pair.second, Float64)
+                @test pair.first == Symbol("feature_$i")
+                @test pair.second == fitresult.W[i]
+                @test pair.second >= 0.0
+            end
+
+            # Test that importances sum to 1
+            total_importance = sum(pair.second for pair in feature_importances_result)
+            @test total_importance ≈ 1.0 atol=1e-10
+        end
+    end
 end
