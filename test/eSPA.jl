@@ -371,15 +371,15 @@ end
 
 @testset "core" begin
     # Test data generation
+    D_features = 3
+    T_instances = 100
     K_clusters = 3
-    X, y = MLJBase.make_blobs(100, 3; centers=K_clusters, rng=123, as_table=false)
-    X_transposed = X'  # Transpose for core functions which expect (D, T) format
-
-    # Basic setup
-    D_features, T_instances = size(X_transposed)
-    classes = unique(y)
+    # Data in MLJ format
+    X_table, y_cat = MLJBase.make_blobs(T_instances, D_features; centers=K_clusters, rng=123, as_table=true)
+    y_int = convert.(Int64, MLJBase.int(y_cat)) # Convert from UInt32 to Int64
+    X_transposed = MLJBase.matrix(X_table; transpose=true)
+    classes = sort(unique(y_int))
     M_classes = length(classes)
-    y_int = [findfirst(==(yi), classes) for yi in y]
 
     # Create one-hot encoded targets
     P = zeros(Float64, M_classes, T_instances)
@@ -638,21 +638,16 @@ end
     end
 
     @testset "5. Prediction Functions" begin
-        # Create training data using MLJ format
-        X_table, y_int = MLJBase.make_blobs(100, 3; centers=K_clusters, rng=42, as_table=true)
-        y_categorical = MLJBase.categorical(y_int)
-
         # Train a model using MLJ interface
         model = eSPAClassifier(K=K_clusters, epsC=1e-3, epsW=1e-1, random_state=42)
-        mach = MLJBase.machine(model, X_table, y_categorical)
+        mach = MLJBase.machine(model, X_table, y_cat)
         MLJBase.fit!(mach, verbosity=0)
         fitresult = mach.fitresult
-        X_transposed = MLJBase.matrix(X_table; transpose=true)
 
         @testset "predict_proba tests" begin
             X_test = X_transposed[:, 1:10]
             # Test with iterative_pred = false
-            P = eSPA.predict_proba(model, fitresult, X_test)
+            P, _ = eSPA.predict_proba(model, fitresult, X_test)
             @test size(P) == (M_classes, 10)
             @test all(sum(P; dims=1) .≈ 1.0)
             @test all(P .>= 0)
@@ -661,7 +656,7 @@ end
             model_iter_pred = eSPAClassifier(
                 K=K_clusters, iterative_pred=true, random_state=42
             )
-            P_iter = eSPA.predict_proba(model_iter_pred, fitresult, X_test)
+            P_iter, _ = eSPA.predict_proba(model_iter_pred, fitresult, X_test)
             @test size(P_iter) == (M_classes, 10)
             @test all(sum(P_iter; dims=1) .≈ 1.0)
             @test all(P_iter .>= 0)
@@ -669,16 +664,16 @@ end
             # Test reproducibility
             for iterative_pred in [true, false]
                 model_repro = eSPAClassifier(K=K_clusters, iterative_pred=iterative_pred, random_state=123)
-                P1 = eSPA.predict_proba(model_repro, fitresult, X_test)
+                P1, _ = eSPA.predict_proba(model_repro, fitresult, X_test)
 
                 model_repro2 = eSPAClassifier(K=K_clusters, iterative_pred=iterative_pred, random_state=123)
-                P2 = eSPA.predict_proba(model_repro2, fitresult, X_test)
+                P2, _ = eSPA.predict_proba(model_repro2, fitresult, X_test)
                 @test P1 ≈ P2
             end
 
             # Test single instance prediction
             X_single = X_transposed[:, 1:1]
-            P_single = eSPA.predict_proba(model, fitresult, X_single)
+            P_single, _ = eSPA.predict_proba(model, fitresult, X_single)
             @test size(P_single) == (M_classes, 1)
             @test sum(P_single) ≈ 1.0
         end
@@ -690,6 +685,8 @@ end
 
             # Test output properties
             @test length(y_pred) == 10
+            @test all(MLJBase.classes(y_pred) .== MLJBase.classes(y_cat))
+
             # Test that each prediction is a valid probability distribution
             for pred in y_pred
                 sum_pred = 0.0
@@ -703,7 +700,7 @@ end
 
             # Test with iterative prediction
             model_iter = eSPAClassifier(K=K_clusters, iterative_pred=true, random_state=42)
-            mach_iter = MLJBase.machine(model_iter, X_table, y_categorical)
+            mach_iter = MLJBase.machine(model_iter, X_table, y_cat)
             MLJBase.fit!(mach_iter, verbosity=0)
 
             y_pred_iter = MLJBase.predict(mach_iter, X_test)
@@ -718,19 +715,28 @@ end
                 end
                 @test sum_pred ≈ 1.0 atol=1e-10
             end
+
+            # Test single instance prediction and empty matrix prediction
+            X_single = MLJBase.selectrows(X_table, 1:1)
+            X_empty = MLJBase.selectrows(X_table, 1:0)
+            for ma in [mach, mach_iter]
+                y_pred_single = MLJBase.predict(ma, X_single)
+                @test length(y_pred_single) == 1
+                @test MLJBase.classes(y_pred_single) == MLJBase.classes(y_cat)
+                probs = MLJBase.pdf(y_pred_single, MLJBase.classes(y_pred_single))
+                @test all(probs .>= 0)
+                @test sum(probs) ≈ 1.0 atol=1e-10
+                y_pred_empty = MLJBase.predict(ma, X_empty)
+                @test length(y_pred_empty) == 0
+                @test MLJBase.classes(y_pred_empty) == MLJBase.classes(y_cat)
+            end
         end
     end
 
     @testset "6. Integration and Property Tests" begin
-        # Create training data using MLJ format
-        T_instances = 100
-        D_features = 3
-        X_table, y_int = MLJBase.make_blobs(T_instances, D_features; centers=K_clusters, rng=42, as_table=true)
-        y_categorical = MLJBase.categorical(y_int)
-
         # Train a model using MLJ interface
         model = eSPAClassifier(K=K_clusters, epsC=1e-3, epsW=1e-1, random_state=42)
-        mach = MLJBase.machine(model, X_table, y_categorical)
+        mach = MLJBase.machine(model, X_table, y_cat)
         MLJBase.fit!(mach, verbosity=0)
         fitresult = mach.fitresult
         report = MLJBase.report(mach)
@@ -776,97 +782,64 @@ end
             @test size(L) == (M_classes, K_clusters)
 
             # Test that the classes are correct
-            @test classes == MLJBase.classes(y_categorical)
+            @test classes == MLJBase.classes(y_cat)
         end
 
     end
 
-    # @testset "7. Reproducibility and Robustness" begin
-    #     @testset "Deterministic behavior" begin
-    #         # Test same RNG seeds produce identical results
-    #         model = eSPAClassifier(K=3, epsC=1e-3, epsW=1e-1, random_state=42)
+    @testset "7. Reproducibility and Robustness" begin
+        # Train a model using MLJ interface
+        model = eSPAClassifier(K=K_clusters, epsC=1e-3, epsW=1e-1, random_state=42)
+        mach = MLJBase.machine(model, X_table, y_cat)
+        MLJBase.fit!(mach, verbosity=0)
+        fitresult = mach.fitresult
+        report = MLJBase.report(mach)
 
-    #         rng1 = Random.MersenneTwister(123)
-    #         C1, W1, L1, G1 = eSPA.initialise(model, X_transposed, y_int, D_features, T_instances, M_classes; rng=rng1)
+        @testset "Deterministic behavior" begin
+            # Test same RNG seeds produce identical results
+            model1 = eSPAClassifier(K=K_clusters, epsC=1e-3, epsW=1e-1, random_state=42)
+            mach1 = MLJBase.machine(model1, X_table, y_cat)
+            MLJBase.fit!(mach1, verbosity=0)
+            fitresult1 = mach1.fitresult
+            report1 = MLJBase.report(mach1)
 
-    #         rng2 = Random.MersenneTwister(123)
-    #         C2, W2, L2, G2 = eSPA.initialise(model, X_transposed, y_int, D_features, T_instances, M_classes; rng=rng2)
+            @test report.G == report1.G
+            @test fitresult.C == fitresult1.C
+            @test fitresult.W == fitresult1.W
+            @test fitresult.L == fitresult1.L
+            @test fitresult.classes == fitresult1.classes
+        end
 
-    #         @test C1 ≈ C2
-    #         @test W1 ≈ W2
-    #         @test L1 ≈ L2
-    #         @test G1.rowval == G2.rowval
+        @testset "Reproducible affiliations" begin
+            # Test unbias=true case
+            model_unbias = eSPAClassifier(K=K_clusters, epsC=1e-3, epsW=1e-1, unbias=true, random_state=42)
+            mach_unbias = MLJBase.machine(model_unbias, X_table, y_cat)
+            MLJBase.fit!(mach_unbias, verbosity=0)
+            fitresult_unbias = mach_unbias.fitresult
+            report_unbias = MLJBase.report(mach_unbias)
 
-    #         # Test updates are deterministic
-    #         eSPA.update_G!(G1, X_transposed, P, C1, W1, L1, model.epsC)
-    #         eSPA.update_G!(G2, X_transposed, P, C2, W2, L2, model.epsC)
-    #         @test G1.rowval == G2.rowval
-    #     end
+            _, G_unbias = eSPA.predict_proba(model_unbias, fitresult_unbias, X_transposed)
+            @test G_unbias == report_unbias.G
 
-    #     @testset "Reproducible affiliations" begin
-    #         # Create training data using MLJ format
-    #         X_train, y_train = MLJBase.make_blobs(50, 3; centers=2, rng=42, as_table=false)
-    #         X_table = MLJBase.table(X_train)
-    #         y_categorical = MLJBase.categorical(y_train)
+            # Test unbias=true + iterative_pred=true case
+            model_iter = eSPAClassifier(K=K_clusters, epsC=1e-3, epsW=1e-1, max_iter=5, unbias=true,
+                                       iterative_pred=true, random_state=42)
+            mach_iter = MLJBase.machine(model_iter, X_table, y_cat)
+            MLJBase.fit!(mach_iter, verbosity=0)
+            fitresult_iter = mach_iter.fitresult
+            report_iter = MLJBase.report(mach_iter)
 
-    #         # Test unbias=true case
-    #         model_unbias = eSPAClassifier(K=3, epsC=1e-3, epsW=1e-1, max_iter=5, unbias=true, random_state=42)
-    #         mach_unbias = MLJBase.machine(model_unbias, X_table, y_categorical)
-    #         MLJBase.fit!(mach_unbias, verbosity=0)
-
-    #         # Test prediction on training data
-    #         y_pred_unbias = MLJBase.predict(mach_unbias, X_table)
-    #         @test length(y_pred_unbias) == length(y_categorical)
-    #         # Test that each prediction is a valid probability distribution
-    #         for pred in y_pred_unbias
-    #             @test sum(MLJBase.pdf(pred, MLJBase.classes(pred))) ≈ 1.0
-    #         end
-
-    #         # Test unbias=true + iterative_pred=true case
-    #         model_iter = eSPAClassifier(K=3, epsC=1e-3, epsW=1e-1, max_iter=5, unbias=true,
-    #                                    iterative_pred=true, random_state=42)
-    #         mach_iter = MLJBase.machine(model_iter, X_table, y_categorical)
-    #         MLJBase.fit!(mach_iter, verbosity=0)
-
-    #         # Test prediction on training data
-    #         y_pred_iter = MLJBase.predict(mach_iter, X_table)
-    #         @test length(y_pred_iter) == length(y_categorical)
-    #         # Test that each prediction is a valid probability distribution
-    #         for pred in y_pred_iter
-    #             @test sum(MLJBase.pdf(pred, MLJBase.classes(pred))) ≈ 1.0
-    #         end
-
-    #         # Test reproducibility: same model parameters should give same results
-    #         model_repro = eSPAClassifier(K=3, epsC=1e-3, epsW=1e-1, max_iter=5, unbias=true, random_state=42)
-    #         mach_repro = MLJBase.machine(model_repro, X_table, y_categorical)
-    #         MLJBase.fit!(mach_repro, verbosity=0)
-
-    #         y_pred_repro = MLJBase.predict(mach_repro, X_table)
-
-    #         # Check that predictions are reproducible (same random_state should give same results)
-    #         @test length(y_pred_repro) == length(y_pred_unbias)
-
-    #         # Extract fitted parameters to verify internal consistency
-    #         fitted_params_unbias = MLJBase.fitted_params(mach_unbias)
-    #         fitted_params_repro = MLJBase.fitted_params(mach_repro)
-
-    #         @test fitted_params_unbias.C ≈ fitted_params_repro.C
-    #         @test fitted_params_unbias.W ≈ fitted_params_repro.W
-    #         @test fitted_params_unbias.L ≈ fitted_params_repro.L
-    #     end
-    # end
+            _, G_iter = eSPA.predict_proba(model_iter, fitresult_iter, X_transposed)
+            @test G_iter == report_iter.G
+        end
+    end
 
     @testset "8. Edge Cases" begin
         # eSPA with epsC = 0 and epsW = Inf should behave like k-means (when mi_init=false)
-        T_instances = 100
-        D_features = 3
-        X_table, y_int = MLJBase.make_blobs(T_instances, D_features; centers=K_clusters, rng=42, as_table=true)
-        y_categorical = MLJBase.categorical(y_int)
-        X_transposed = MLJBase.matrix(X_table; transpose=true)
 
         # Train a model using MLJ interface
         model = eSPAClassifier(K=K_clusters, epsC=0.0, epsW=Inf, mi_init=false, random_state=42)
-        mach = MLJBase.machine(model, X_table, y_categorical)
+        mach = MLJBase.machine(model, X_table, y_cat)
         MLJBase.fit!(mach, verbosity=0)
         fitresult = mach.fitresult
         report = MLJBase.report(mach)

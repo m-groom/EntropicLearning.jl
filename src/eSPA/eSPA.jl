@@ -153,14 +153,10 @@ function MMI.predict(model::eSPAClassifier, fitresult::eSPAFitResult, Xnew)
     # TODO: write a data front-end
     X_mat = MMI.matrix(Xnew; transpose=true)
 
-    Pi_new = predict_proba(model, fitresult, X_mat)
-    probabilities = collect(Pi_new')
+    Pi_new, G_new = predict_proba(model, fitresult, X_mat)  # TODO: store G_new in the report
+    probabilities = Pi_new'
 
-    if size(probabilities, 1) == 0 || size(probabilities, 2) == 0
-        return MMI.UnivariateFinite[]
-    else
-        return MMI.UnivariateFinite(fitresult.classes, probabilities)
-    end
+    return MMI.UnivariateFinite(fitresult.classes, probabilities)
 end
 
 function MMI.fitted_params(::eSPAClassifier, fitresult::eSPAFitResult)

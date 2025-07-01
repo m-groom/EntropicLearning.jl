@@ -271,8 +271,8 @@ function predict_proba(
         iterative_predict!(P, G, model, X, fitresult.C, fitresult.W, fitresult.L)
     end
 
-    # Return Π (TODO: also return Γ and store it in the report)
-    return P
+    # Return Π
+    return P, G
 end
 
 # Iterative prediction function
