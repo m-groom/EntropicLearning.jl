@@ -19,7 +19,6 @@ using EntropicLearning.eSPA: eSPAFitResult
 include("../src/eSPA/core.jl")
 include("../src/eSPA/extras.jl")
 
-
 @testset "extras" begin
     @testset "mi_continuous_discrete function tests" begin
 
@@ -375,7 +374,9 @@ end
     T_instances = 100
     K_clusters = 3
     # Data in MLJ format
-    X_table, y_cat = MLJBase.make_blobs(T_instances, D_features; centers=K_clusters, rng=123, as_table=true)
+    X_table, y_cat = MLJBase.make_blobs(
+        T_instances, D_features; centers=K_clusters, rng=123, as_table=true
+    )
     y_int = convert.(Int64, MLJBase.int(y_cat)) # Convert from UInt32 to Int64
     X_transposed = MLJBase.matrix(X_table; transpose=true)
     classes = sort(unique(y_int))
@@ -389,8 +390,11 @@ end
 
     @testset "1. Initialisation" begin
         # Test with different initialization modes
-        for (mi_init, kpp_init) in [(true, true), (true, false), (false, true), (false, false)]
-            model = eSPAClassifier(K=3, mi_init=mi_init, kpp_init=kpp_init, random_state=42)
+        for (mi_init, kpp_init) in
+            [(true, true), (true, false), (false, true), (false, false)]
+            model = eSPAClassifier(;
+                K=3, mi_init=mi_init, kpp_init=kpp_init, random_state=42
+            )
 
             C, W, L, G = eSPA.initialise(
                 model, X_transposed, y_int, D_features, T_instances, M_classes
@@ -404,7 +408,7 @@ end
 
             # Test W properties
             @test all(W .>= 0)
-            @test sum(W) ≈ 1.0 atol=1e-10
+            @test sum(W) ≈ 1.0 atol = 1e-10
 
             # Test L properties (left stochastic)
             @test all(L .>= 0)
@@ -416,7 +420,7 @@ end
         end
 
         # Test edge case: K=1
-        model_k1 = eSPAClassifier(K=1, random_state=42)
+        model_k1 = eSPAClassifier(; K=1, random_state=42)
         C, W, L, G = eSPA.initialise(
             model_k1, X_transposed, y_int, D_features, T_instances, M_classes
         )
@@ -424,27 +428,34 @@ end
         @test all(G.rowval .== 1)  # All points assigned to cluster 1
 
         # Test reproducibility
-        model1 = eSPAClassifier(K=3, random_state=42)
-        model2 = eSPAClassifier(K=3, random_state=42)
+        model1 = eSPAClassifier(; K=3, random_state=42)
+        model2 = eSPAClassifier(; K=3, random_state=42)
 
-        C1, W1, L1, G1 = eSPA.initialise(model1, X_transposed, y_int, D_features, T_instances, M_classes)
-        C2, W2, L2, G2 = eSPA.initialise(model2, X_transposed, y_int, D_features, T_instances, M_classes)
+        C1, W1, L1, G1 = eSPA.initialise(
+            model1, X_transposed, y_int, D_features, T_instances, M_classes
+        )
+        C2, W2, L2, G2 = eSPA.initialise(
+            model2, X_transposed, y_int, D_features, T_instances, M_classes
+        )
 
         @test C1 ≈ C2
         @test W1 ≈ W2
         @test L1 ≈ L2
         @test G1.rowval == G2.rowval
-
     end
 
     @testset "2. Core Update Functions" begin
         # Setup for update function tests
-        model = eSPAClassifier(K=K_clusters, epsC=1e-3, epsW=1e-1, random_state=101)
-        C, W, L, G = eSPA.initialise(model, X_transposed, y_int, D_features, T_instances, M_classes)
+        model = eSPAClassifier(; K=K_clusters, epsC=1e-3, epsW=1e-1, random_state=101)
+        C, W, L, G = eSPA.initialise(
+            model, X_transposed, y_int, D_features, T_instances, M_classes
+        )
 
         @testset "update_G! tests" begin
             G_orig = copy(G)
-            loss_before = eSPA.calc_loss(X_transposed, P, C, W, L, G, model.epsC, model.epsW)
+            loss_before = eSPA.calc_loss(
+                X_transposed, P, C, W, L, G, model.epsC, model.epsW
+            )
 
             eSPA.update_G!(G, X_transposed, P, C, W, L, model.epsC)
 
@@ -473,13 +484,15 @@ end
 
         @testset "update_W! tests" begin
             W_orig = copy(W)
-            loss_before = eSPA.calc_loss(X_transposed, P, C, W, L, G, model.epsC, model.epsW)
+            loss_before = eSPA.calc_loss(
+                X_transposed, P, C, W, L, G, model.epsC, model.epsW
+            )
 
             eSPA.update_W!(W, X_transposed, C, G, model.epsW)
 
             # Test W remains a valid probability vector
             @test all(W .>= 0)
-            @test sum(W) ≈ 1.0 atol=1e-10
+            @test sum(W) ≈ 1.0 atol = 1e-10
 
             # Test that loss doesn't increase
             loss_after = eSPA.calc_loss(X_transposed, P, C, W, L, G, model.epsC, model.epsW)
@@ -492,18 +505,18 @@ end
             eSPA.update_W!(W_inf, X_transposed, C, G, Inf)
 
             @test all(W_inf .>= 0)
-            @test sum(W_inf) ≈ 1.0 atol=1e-10
-            @test all(W_inf .≈ 1.0/D_features)
+            @test sum(W_inf) ≈ 1.0 atol = 1e-10
+            @test all(W_inf .≈ 1.0 / D_features)
 
             loss_after = eSPA.calc_loss(X_transposed, P, C, W_inf, L, G, model.epsC, Inf)
             @test loss_after <= loss_before + 1e-10
-
-
         end
 
         @testset "update_C! tests" begin
             C_orig = copy(C)
-            loss_before = eSPA.calc_loss(X_transposed, P, C, W, L, G, model.epsC, model.epsW)
+            loss_before = eSPA.calc_loss(
+                X_transposed, P, C, W, L, G, model.epsC, model.epsW
+            )
 
             eSPA.update_C!(C, X_transposed, G)
 
@@ -517,7 +530,9 @@ end
 
         @testset "update_L! tests" begin
             L_orig = copy(L)
-            loss_before = eSPA.calc_loss(X_transposed, P, C, W, L, G, model.epsC, model.epsW)
+            loss_before = eSPA.calc_loss(
+                X_transposed, P, C, W, L, G, model.epsC, model.epsW
+            )
 
             eSPA.update_L!(L, P, G)
 
@@ -543,8 +558,10 @@ end
     end
 
     @testset "3. Loss and Convergence Functions" begin
-        model = eSPAClassifier(K=K_clusters, epsC=1e-3, epsW=1e-1, random_state=123)
-        C, W, L, G = eSPA.initialise(model, X_transposed, y_int, D_features, T_instances, M_classes)
+        model = eSPAClassifier(; K=K_clusters, epsC=1e-3, epsW=1e-1, random_state=123)
+        C, W, L, G = eSPA.initialise(
+            model, X_transposed, y_int, D_features, T_instances, M_classes
+        )
 
         @testset "calc_loss tests" begin
             loss = eSPA.calc_loss(X_transposed, P, C, W, L, G, model.epsC, model.epsW)
@@ -639,9 +656,9 @@ end
 
     @testset "5. Prediction Functions" begin
         # Train a model using MLJ interface
-        model = eSPAClassifier(K=K_clusters, epsC=1e-3, epsW=1e-1, random_state=42)
+        model = eSPAClassifier(; K=K_clusters, epsC=1e-3, epsW=1e-1, random_state=42)
         mach = MLJBase.machine(model, X_table, y_cat)
-        MLJBase.fit!(mach, verbosity=0)
+        MLJBase.fit!(mach; verbosity=0)
         fitresult = mach.fitresult
 
         @testset "predict_proba tests" begin
@@ -653,7 +670,7 @@ end
             @test all(P .>= 0)
 
             # Test with iterative_pred = true
-            model_iter_pred = eSPAClassifier(
+            model_iter_pred = eSPAClassifier(;
                 K=K_clusters, iterative_pred=true, random_state=42
             )
             P_iter, _ = eSPA.predict_proba(model_iter_pred, fitresult, X_test)
@@ -663,10 +680,14 @@ end
 
             # Test reproducibility
             for iterative_pred in [true, false]
-                model_repro = eSPAClassifier(K=K_clusters, iterative_pred=iterative_pred, random_state=123)
+                model_repro = eSPAClassifier(;
+                    K=K_clusters, iterative_pred=iterative_pred, random_state=123
+                )
                 P1, _ = eSPA.predict_proba(model_repro, fitresult, X_test)
 
-                model_repro2 = eSPAClassifier(K=K_clusters, iterative_pred=iterative_pred, random_state=123)
+                model_repro2 = eSPAClassifier(;
+                    K=K_clusters, iterative_pred=iterative_pred, random_state=123
+                )
                 P2, _ = eSPA.predict_proba(model_repro2, fitresult, X_test)
                 @test P1 ≈ P2
             end
@@ -695,13 +716,15 @@ end
                     @test prob >= 0.0
                     sum_pred += prob
                 end
-                @test sum_pred ≈ 1.0 atol=1e-10
+                @test sum_pred ≈ 1.0 atol = 1e-10
             end
 
             # Test with iterative prediction
-            model_iter = eSPAClassifier(K=K_clusters, iterative_pred=true, random_state=42)
+            model_iter = eSPAClassifier(;
+                K=K_clusters, iterative_pred=true, random_state=42
+            )
             mach_iter = MLJBase.machine(model_iter, X_table, y_cat)
-            MLJBase.fit!(mach_iter, verbosity=0)
+            MLJBase.fit!(mach_iter; verbosity=0)
 
             y_pred_iter = MLJBase.predict(mach_iter, X_test)
             @test length(y_pred_iter) == 10
@@ -713,7 +736,7 @@ end
                     @test prob >= 0.0
                     sum_pred += prob
                 end
-                @test sum_pred ≈ 1.0 atol=1e-10
+                @test sum_pred ≈ 1.0 atol = 1e-10
             end
 
             # Test single instance prediction and empty matrix prediction
@@ -725,7 +748,7 @@ end
                 @test MLJBase.classes(y_pred_single) == MLJBase.classes(y_cat)
                 probs = MLJBase.pdf(y_pred_single, MLJBase.classes(y_pred_single))
                 @test all(probs .>= 0)
-                @test sum(probs) ≈ 1.0 atol=1e-10
+                @test sum(probs) ≈ 1.0 atol = 1e-10
                 y_pred_empty = MLJBase.predict(ma, X_empty)
                 @test length(y_pred_empty) == 0
                 @test MLJBase.classes(y_pred_empty) == MLJBase.classes(y_cat)
@@ -735,9 +758,9 @@ end
 
     @testset "6. Integration and Property Tests" begin
         # Train a model using MLJ interface
-        model = eSPAClassifier(K=K_clusters, epsC=1e-3, epsW=1e-1, random_state=42)
+        model = eSPAClassifier(; K=K_clusters, epsC=1e-3, epsW=1e-1, random_state=42)
         mach = MLJBase.machine(model, X_table, y_cat)
-        MLJBase.fit!(mach, verbosity=0)
+        MLJBase.fit!(mach; verbosity=0)
         fitresult = mach.fitresult
         report = MLJBase.report(mach)
 
@@ -753,7 +776,7 @@ end
 
             # Test that loss is monotonically decreasing
             for i in 1:iterations
-                @test loss[i+1] <= loss[i] + 1e-10
+                @test loss[i + 1] <= loss[i] + 1e-10
             end
         end
 
@@ -774,7 +797,7 @@ end
 
             # Test that W is a valid probability vector
             @test all(W .>= 0)
-            @test sum(W) ≈ 1.0 atol=1e-10
+            @test sum(W) ≈ 1.0 atol = 1e-10
 
             # Test that L is a valid conditional probability matrix
             @test all(L .>= 0)
@@ -784,22 +807,21 @@ end
             # Test that the classes are correct
             @test classes == MLJBase.classes(y_cat)
         end
-
     end
 
     @testset "7. Reproducibility and Robustness" begin
         # Train a model using MLJ interface
-        model = eSPAClassifier(K=K_clusters, epsC=1e-3, epsW=1e-1, random_state=42)
+        model = eSPAClassifier(; K=K_clusters, epsC=1e-3, epsW=1e-1, random_state=42)
         mach = MLJBase.machine(model, X_table, y_cat)
-        MLJBase.fit!(mach, verbosity=0)
+        MLJBase.fit!(mach; verbosity=0)
         fitresult = mach.fitresult
         report = MLJBase.report(mach)
 
         @testset "Deterministic behavior" begin
             # Test same RNG seeds produce identical results
-            model1 = eSPAClassifier(K=K_clusters, epsC=1e-3, epsW=1e-1, random_state=42)
+            model1 = eSPAClassifier(; K=K_clusters, epsC=1e-3, epsW=1e-1, random_state=42)
             mach1 = MLJBase.machine(model1, X_table, y_cat)
-            MLJBase.fit!(mach1, verbosity=0)
+            MLJBase.fit!(mach1; verbosity=0)
             fitresult1 = mach1.fitresult
             report1 = MLJBase.report(mach1)
 
@@ -812,9 +834,11 @@ end
 
         @testset "Reproducible affiliations" begin
             # Test unbias=true case
-            model_unbias = eSPAClassifier(K=K_clusters, epsC=1e-3, epsW=1e-1, unbias=true, random_state=42)
+            model_unbias = eSPAClassifier(;
+                K=K_clusters, epsC=1e-3, epsW=1e-1, unbias=true, random_state=42
+            )
             mach_unbias = MLJBase.machine(model_unbias, X_table, y_cat)
-            MLJBase.fit!(mach_unbias, verbosity=0)
+            MLJBase.fit!(mach_unbias; verbosity=0)
             fitresult_unbias = mach_unbias.fitresult
             report_unbias = MLJBase.report(mach_unbias)
 
@@ -822,10 +846,17 @@ end
             @test G_unbias == report_unbias.G
 
             # Test unbias=true + iterative_pred=true case
-            model_iter = eSPAClassifier(K=K_clusters, epsC=1e-3, epsW=1e-1, max_iter=5, unbias=true,
-                                       iterative_pred=true, random_state=42)
+            model_iter = eSPAClassifier(;
+                K=K_clusters,
+                epsC=1e-3,
+                epsW=1e-1,
+                max_iter=5,
+                unbias=true,
+                iterative_pred=true,
+                random_state=42,
+            )
             mach_iter = MLJBase.machine(model_iter, X_table, y_cat)
-            MLJBase.fit!(mach_iter, verbosity=0)
+            MLJBase.fit!(mach_iter; verbosity=0)
             fitresult_iter = mach_iter.fitresult
             report_iter = MLJBase.report(mach_iter)
 
@@ -838,9 +869,11 @@ end
         # eSPA with epsC = 0 and epsW = Inf should behave like k-means (when mi_init=false)
 
         # Train a model using MLJ interface
-        model = eSPAClassifier(K=K_clusters, epsC=0.0, epsW=Inf, mi_init=false, random_state=42)
+        model = eSPAClassifier(;
+            K=K_clusters, epsC=0.0, epsW=Inf, mi_init=false, random_state=42
+        )
         mach = MLJBase.machine(model, X_table, y_cat)
-        MLJBase.fit!(mach, verbosity=0)
+        MLJBase.fit!(mach; verbosity=0)
         fitresult = mach.fitresult
         report = MLJBase.report(mach)
 
@@ -849,7 +882,7 @@ end
         KMeansResult = kmeans(X_transposed, K_clusters; rng=rng, maxiter=200)
 
         # First check that W is uniform
-        @test all(fitresult.W .≈ 1.0/D_features)
+        @test all(fitresult.W .≈ 1.0 / D_features)
 
         # Check that centroids are the same
         @test fitresult.C ≈ KMeansResult.centers
