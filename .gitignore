@@ -28,3 +28,4 @@ Manifest.toml
 
 # Ignore Claude Code settings
 CLAUDE.md
+.claude/

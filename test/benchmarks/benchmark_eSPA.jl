@@ -21,8 +21,8 @@ using Statistics: mean, std
 using Distributions: MultivariateNormal
 using MLJBase
 using Printf
-using JSON3
 using Dates
+using JSON3
 
 # Access eSPA module
 import EntropicLearning.eSPA as eSPA
