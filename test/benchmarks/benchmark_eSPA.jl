@@ -33,6 +33,27 @@ include("../../src/eSPA/core.jl")
 include("../../src/eSPA/extras.jl")
 include("../../src/common/functions.jl")
 
+# Function to sanitise values for JSON serialization
+function sanitise(value::Real)
+    if isnan(value)
+        return 0.0  # Replace NaN with 0
+    elseif isinf(value)
+        return value > 0 ? 1e10 : -1e10  # Replace Inf with large finite numbers
+    else
+        return value
+    end
+end
+
+# Function to safely calculate ratio, avoiding NaN/Inf
+function safe_ratio(numerator::Real, denominator::Real)
+    if denominator == 0
+        return numerator == 0 ? 1.0 : (numerator > 0 ? 1e10 : -1e10)
+    else
+        result = numerator / denominator
+        return sanitise(result)
+    end
+end
+
 # Function to create synthetic worms data for benchmarking
 function make_worms(
     D::Ti,
@@ -182,7 +203,7 @@ function benchmark_function_with_memory(
     end
 
     return BenchmarkResult(
-        func_name, D, T, times, median(times), std(times), Int(median(memories))
+        func_name, D, T, times, sanitise(median(times)), sanitise(std(times)), Int(median(memories))
     )
 end
 
@@ -480,9 +501,9 @@ function run_scaling_benchmarks(; N_runs::Int=10)
             prev = t_results[i - 1]
             curr = t_results[i]
 
-            param_ratio = curr.T / prev.T
-            time_ratio = curr.time_median / prev.time_median
-            mem_ratio = curr.memory_allocated / prev.memory_allocated
+            param_ratio = safe_ratio(curr.T, prev.T)
+            time_ratio = safe_ratio(curr.time_median, prev.time_median)
+            mem_ratio = safe_ratio(curr.memory_allocated, prev.memory_allocated)
 
             println(
                 Printf.@sprintf(
@@ -502,9 +523,9 @@ function run_scaling_benchmarks(; N_runs::Int=10)
             prev = d_results[i - 1]
             curr = d_results[i]
 
-            param_ratio = curr.D / prev.D
-            time_ratio = curr.time_median / prev.time_median
-            mem_ratio = curr.memory_allocated / prev.memory_allocated
+            param_ratio = safe_ratio(curr.D, prev.D)
+            time_ratio = safe_ratio(curr.time_median, prev.time_median)
+            mem_ratio = safe_ratio(curr.memory_allocated, prev.memory_allocated)
 
             println(
                 Printf.@sprintf(
@@ -557,20 +578,20 @@ function save_results_to_json(all_results, all_analyses)
                 Dict(
                     "D" => r.D,
                     "T" => r.T,
-                    "time_median_seconds" => r.time_median,
-                    "time_std_seconds" => r.time_std,
+                    "time_median_seconds" => sanitise(r.time_median),
+                    "time_std_seconds" => sanitise(r.time_std),
                     "memory_allocated_bytes" => r.memory_allocated,
-                    "all_times_seconds" => r.times,
+                    "all_times_seconds" => [sanitise(t) for t in r.times],
                 ) for r in t_results
             ],
             "D_scaling" => [
                 Dict(
                     "D" => r.D,
                     "T" => r.T,
-                    "time_median_seconds" => r.time_median,
-                    "time_std_seconds" => r.time_std,
+                    "time_median_seconds" => sanitise(r.time_median),
+                    "time_std_seconds" => sanitise(r.time_std),
                     "memory_allocated_bytes" => r.memory_allocated,
-                    "all_times_seconds" => r.times,
+                    "all_times_seconds" => [sanitise(t) for t in r.times],
                 ) for r in d_results
             ],
         )
@@ -581,14 +602,14 @@ function save_results_to_json(all_results, all_analyses)
     for (func_name, (t_analysis, d_analysis)) in all_analyses
         export_data["scaling_analysis"][func_name] = Dict(
             "T_scaling" => Dict(
-                "slope_seconds_per_T" => t_analysis.slope,
-                "intercept_seconds" => t_analysis.intercept,
-                "r_squared" => t_analysis.r_squared,
+                "slope_seconds_per_T" => sanitise(t_analysis.slope),
+                "intercept_seconds" => sanitise(t_analysis.intercept),
+                "r_squared" => sanitise(t_analysis.r_squared),
             ),
             "D_scaling" => Dict(
-                "slope_seconds_per_D" => d_analysis.slope,
-                "intercept_seconds" => d_analysis.intercept,
-                "r_squared" => d_analysis.r_squared,
+                "slope_seconds_per_D" => sanitise(d_analysis.slope),
+                "intercept_seconds" => sanitise(d_analysis.intercept),
+                "r_squared" => sanitise(d_analysis.r_squared),
             ),
         )
     end
@@ -604,9 +625,9 @@ function save_results_to_json(all_results, all_analyses)
                 Dict(
                     "from_T" => prev.T,
                     "to_T" => curr.T,
-                    "parameter_ratio" => curr.T / prev.T,
-                    "time_ratio" => curr.time_median / prev.time_median,
-                    "memory_ratio" => curr.memory_allocated / prev.memory_allocated,
+                    "parameter_ratio" => safe_ratio(curr.T, prev.T),
+                    "time_ratio" => safe_ratio(curr.time_median, prev.time_median),
+                    "memory_ratio" => safe_ratio(curr.memory_allocated, prev.memory_allocated),
                 ),
             )
         end
@@ -619,9 +640,9 @@ function save_results_to_json(all_results, all_analyses)
                 Dict(
                     "from_D" => prev.D,
                     "to_D" => curr.D,
-                    "parameter_ratio" => curr.D / prev.D,
-                    "time_ratio" => curr.time_median / prev.time_median,
-                    "memory_ratio" => curr.memory_allocated / prev.memory_allocated,
+                    "parameter_ratio" => safe_ratio(curr.D, prev.D),
+                    "time_ratio" => safe_ratio(curr.time_median, prev.time_median),
+                    "memory_ratio" => safe_ratio(curr.memory_allocated, prev.memory_allocated),
                 ),
             )
         end
