@@ -17,7 +17,7 @@ X = MLJBase.table(X_table)
     @testset "Default feature_range (0, 1)" begin
         scaler = MinMaxScaler()
         mach = machine(scaler, X)
-        fit!(mach, verbosity=0)
+        fit!(mach; verbosity=0)
         X_transformed = transform(mach, X)
 
         # Check mins and maxs of transformed data
@@ -40,7 +40,7 @@ X = MLJBase.table(X_table)
         fmin, fmax = -1.0, 1.0
         scaler = MinMaxScaler(; feature_range=(fmin, fmax))
         mach = machine(scaler, X)
-        fit!(mach, verbosity=0)
+        fit!(mach; verbosity=0)
         X_transformed = transform(mach, X)
 
         for col_name in Tables.columnnames(X_transformed)
@@ -64,7 +64,7 @@ X = MLJBase.table(X_table)
         fmin, fmax = 0.0, 1.0
         scaler = MinMaxScaler(; feature_range=(fmin, fmax))
         mach = machine(scaler, X_const)
-        fit!(mach, verbosity=0)
+        fit!(mach; verbosity=0)
         X_transformed = transform(mach, X_const)
 
         a_transformed = Tables.getcolumn(X_transformed, :a)
@@ -87,7 +87,7 @@ X = MLJBase.table(X_table)
         fmin, fmax = 3.0, 3.0
         scaler = MinMaxScaler(; feature_range=(fmin, fmax))
         mach = machine(scaler, X)
-        fit!(mach, verbosity=0)
+        fit!(mach; verbosity=0)
         X_transformed = transform(mach, X)
 
         for col_name in Tables.columnnames(X_transformed)
@@ -105,7 +105,7 @@ X = MLJBase.table(X_table)
         X_empty_col = MLJBase.table(X_empty_col_table)
         scaler = MinMaxScaler()
         mach = machine(scaler, X_empty_col)
-        fit!(mach, verbosity=0)
+        fit!(mach; verbosity=0)
         fp = fitted_params(mach)
         @test isnan(fp.min_values_per_feature[2])
         @test isnan(fp.max_values_per_feature[2])
@@ -133,7 +133,7 @@ end
     @testset "Default feature_range (0, 1)" begin
         transformer = QuantileTransformer()
         mach = machine(transformer, X_qt)
-        fit!(mach, verbosity=0)
+        fit!(mach; verbosity=0)
         X_transformed = transform(mach, X_qt)
 
         for col_name in Tables.columnnames(X_transformed)
@@ -166,7 +166,7 @@ end
         fmin, fmax = -1.0, 1.0
         transformer = QuantileTransformer(; feature_range=(fmin, fmax))
         mach = machine(transformer, X_qt)
-        fit!(mach, verbosity=0)
+        fit!(mach; verbosity=0)
         X_transformed = transform(mach, X_qt)
 
         for col_name in Tables.columnnames(X_transformed)
@@ -194,7 +194,7 @@ end
         fmin, fmax = 0.0, 1.0
         transformer = QuantileTransformer(; feature_range=(fmin, fmax))
         mach = machine(transformer, X_const)
-        fit!(mach, verbosity=0)
+        fit!(mach; verbosity=0)
         X_transformed = transform(mach, X_const)
 
         a_transformed = Tables.getcolumn(X_transformed, :a)
@@ -217,7 +217,7 @@ end
     @testset "Out-of-sample data" begin
         transformer = QuantileTransformer()
         mach = machine(transformer, X_qt)
-        fit!(mach, verbosity=0)
+        fit!(mach; verbosity=0)
 
         X_new_table = (a=[0.0, 5.5, 11.0], b=[12.0, 5.5, -1.0], c=[1.0, 7.0, 10.0])
         X_new = MLJBase.table(X_new_table)
@@ -260,7 +260,7 @@ end
         X_empty_fit = MLJBase.table(X_empty_fit_table)
         transformer = QuantileTransformer()
         mach = machine(transformer, X_empty_fit)
-        fit!(mach, verbosity=0)
+        fit!(mach; verbosity=0)
         fp = fitted_params(mach)
         @test isempty(fp.quantiles_list[2])
 
@@ -281,7 +281,7 @@ end
         X_nonfinite = MLJBase.table(X_nonfinite_table)
         transformer = QuantileTransformer()
         mach = machine(transformer, X_nonfinite)
-        fit!(mach, verbosity=0)
+        fit!(mach; verbosity=0)
         fp = fitted_params(mach)
         @test isempty(fp.quantiles_list[2]) # No finite values to compute quantiles
 
@@ -294,7 +294,7 @@ end
     @testset "Column name mismatch" begin
         transformer = QuantileTransformer()
         mach = machine(transformer, X_qt)
-        fit!(mach, verbosity=0)
+        fit!(mach; verbosity=0)
         X_wrong_names_table = (x1=X_qt.a, x2=X_qt.b, x3=X_qt.c)
         X_wrong_names = MLJBase.table(X_wrong_names_table)
         @test_throws ErrorException transform(mach, X_wrong_names)
