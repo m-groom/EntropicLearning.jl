@@ -892,9 +892,9 @@ end
 
     @testset "9. MLJ Interface" begin
         # Train a model using MLJ interface
-        model = eSPAClassifier(K=K_clusters, epsC=1e-3, epsW=1e-1, random_state=42)
+        model = eSPAClassifier(; K=K_clusters, epsC=1e-3, epsW=1e-1, random_state=42)
         mach = MLJBase.machine(model, X_table, y_cat)
-        MLJBase.fit!(mach, verbosity=0)
+        MLJBase.fit!(mach; verbosity=0)
         fitresult = mach.fitresult
         report = MLJBase.report(mach)
 
@@ -913,7 +913,9 @@ end
         end
 
         @testset "feature_importances tests" begin
-            feature_importances_result = MLJBase.feature_importances(model, fitresult, report)
+            feature_importances_result = MLJBase.feature_importances(
+                model, fitresult, report
+            )
 
             # Test that result is a vector of pairs
             @test isa(feature_importances_result, Vector)
@@ -931,7 +933,7 @@ end
 
             # Test that importances sum to 1
             total_importance = sum(pair.second for pair in feature_importances_result)
-            @test total_importance ≈ 1.0 atol=1e-10
+            @test total_importance ≈ 1.0 atol = 1e-10
         end
     end
 end
