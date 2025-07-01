@@ -21,6 +21,8 @@ using Statistics: mean, std
 using Distributions: MultivariateNormal
 using MLJBase
 using Printf
+using JSON3
+using Dates
 
 # Access eSPA module
 import EntropicLearning.eSPA as eSPA
@@ -94,21 +96,39 @@ function create_test_data(D_features::Int, T_instances::Int; rng::Union{Abstract
     return X_table, y_cat
 end
 
-# Scaling test parameter definitions
+# Scaling test parameter definitions - doubling progression
 const T_SCALING_PARAMS = [
     (D=10, T=100),
-    (D=10, T=1_000),
-    (D=10, T=10_000),
-    (D=10, T=100_000),
-    (D=10, T=1_000_000)
+    (D=10, T=200),
+    (D=10, T=400),
+    (D=10, T=800),
+    (D=10, T=1600),
+    (D=10, T=3200),
+    (D=10, T=6400),
+    (D=10, T=12800),
+    (D=10, T=25600),
+    (D=10, T=51200),
+    (D=10, T=102400),
+    (D=10, T=204800),
+    (D=10, T=409600),
+    (D=10, T=819200)
 ]
 
 const D_SCALING_PARAMS = [
     (D=10, T=100),
-    (D=100, T=100),
-    (D=1_000, T=100),
-    (D=10_000, T=100),
-    (D=100_000, T=100)
+    (D=20, T=100),
+    (D=40, T=100),
+    (D=80, T=100),
+    (D=160, T=100),
+    (D=320, T=100),
+    (D=640, T=100),
+    (D=1280, T=100),
+    (D=2560, T=100),
+    (D=5120, T=100),
+    (D=10240, T=100),
+    (D=20480, T=100),
+    (D=40960, T=100),
+    (D=81920, T=100)
 ]
 
 # Function to create data and initialise parameters for direct testing
@@ -340,12 +360,12 @@ function run_scaling_benchmarks(; N_runs::Int=10)
     end
 
     # Timing summary for largest test cases
-    println("\n" * "="^90)
+    println("\n" * "="^70)
     println("TIMING SUMMARY FOR LARGEST CASES")
-    println("="^90)
-    println(Printf.@sprintf("%-12s | %-20s | %-20s", "Function", "(D=10, T=1M)", "(D=100K, T=100)"))
-    println(Printf.@sprintf("%-12s | %-20s | %-20s", "", "Time (ms) | Mem (MB)", "Time (ms) | Mem (MB)"))
-    println("-"^90)
+    println("="^70)
+    println(Printf.@sprintf("%-12s | %-24s | %-24s", "Function", "(D=10, T=819K)", "(D=82K, T=100)"))
+    println(Printf.@sprintf("%-12s | %-24s | %-24s", "", "Time (ms) | Mem (MB)", "Time (ms) | Mem (MB)"))
+    println("-"^70)
 
     for func_name in ["update_G!", "update_W!", "update_C!", "update_L!", "calc_loss"]
         t_results, d_results = all_results[func_name]
@@ -407,7 +427,121 @@ function run_scaling_benchmarks(; N_runs::Int=10)
         println()
     end
 
+    # Save results to JSON file
+    save_results_to_json(all_results, all_analyses)
+
     return all_results, all_analyses
+end
+
+# Function to save benchmark results to JSON
+function save_results_to_json(all_results, all_analyses)
+    println("\nSaving benchmark data to JSON...")
+
+    # Create output directory if it doesn't exist
+    output_dir = "benchmark_results"
+    if !isdir(output_dir)
+        mkdir(output_dir)
+        println("Created directory: $output_dir/")
+    end
+
+    # Prepare data structure for JSON export
+    export_data = Dict{String, Any}()
+
+    # Add metadata
+    export_data["metadata"] = Dict(
+        "timestamp" => string(now()),
+        "julia_version" => string(VERSION),
+        "description" => "eSPA core functions scaling benchmark results",
+        "T_range" => "100 to 819,200 (fixed D=10)",
+        "D_range" => "10 to 81,920 (fixed T=100)"
+    )
+
+    # Add raw benchmark results
+    export_data["raw_results"] = Dict{String, Any}()
+    for (func_name, (t_results, d_results)) in all_results
+        export_data["raw_results"][func_name] = Dict(
+            "T_scaling" => [
+                Dict(
+                    "D" => r.D,
+                    "T" => r.T,
+                    "time_median_seconds" => r.time_median,
+                    "time_std_seconds" => r.time_std,
+                    "memory_allocated_bytes" => r.memory_allocated,
+                    "all_times_seconds" => r.times
+                ) for r in t_results
+            ],
+            "D_scaling" => [
+                Dict(
+                    "D" => r.D,
+                    "T" => r.T,
+                    "time_median_seconds" => r.time_median,
+                    "time_std_seconds" => r.time_std,
+                    "memory_allocated_bytes" => r.memory_allocated,
+                    "all_times_seconds" => r.times
+                ) for r in d_results
+            ]
+        )
+    end
+
+    # Add scaling analysis results
+    export_data["scaling_analysis"] = Dict{String, Any}()
+    for (func_name, (t_analysis, d_analysis)) in all_analyses
+        export_data["scaling_analysis"][func_name] = Dict(
+            "T_scaling" => Dict(
+                "slope_seconds_per_T" => t_analysis.slope,
+                "intercept_seconds" => t_analysis.intercept,
+                "r_squared" => t_analysis.r_squared
+            ),
+            "D_scaling" => Dict(
+                "slope_seconds_per_D" => d_analysis.slope,
+                "intercept_seconds" => d_analysis.intercept,
+                "r_squared" => d_analysis.r_squared
+            )
+        )
+    end
+
+    # Add successive ratios analysis
+    export_data["successive_ratios"] = Dict{String, Any}()
+    for (func_name, (t_results, d_results)) in all_results
+        t_ratios = []
+        for i in 2:length(t_results)
+            prev, curr = t_results[i-1], t_results[i]
+            push!(t_ratios, Dict(
+                "from_T" => prev.T,
+                "to_T" => curr.T,
+                "parameter_ratio" => curr.T / prev.T,
+                "time_ratio" => curr.time_median / prev.time_median,
+                "memory_ratio" => curr.memory_allocated / prev.memory_allocated
+            ))
+        end
+
+        d_ratios = []
+        for i in 2:length(d_results)
+            prev, curr = d_results[i-1], d_results[i]
+            push!(d_ratios, Dict(
+                "from_D" => prev.D,
+                "to_D" => curr.D,
+                "parameter_ratio" => curr.D / prev.D,
+                "time_ratio" => curr.time_median / prev.time_median,
+                "memory_ratio" => curr.memory_allocated / prev.memory_allocated
+            ))
+        end
+
+        export_data["successive_ratios"][func_name] = Dict(
+            "T_scaling" => t_ratios,
+            "D_scaling" => d_ratios
+        )
+    end
+
+    # Generate filename
+    filename = joinpath(output_dir, "espa_benchmark_results.json")
+
+    # Write to JSON file
+    open(filename, "w") do io
+        JSON3.pretty(io, export_data)
+    end
+
+    println("Benchmark data saved to: $filename")
 end
 
 # Run the benchmark if called directly
