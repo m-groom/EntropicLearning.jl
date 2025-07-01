@@ -61,11 +61,11 @@ function make_worms(D::Ti, T::Ti; σ::Tf=1.0, μ::Tf=2.0, random_state::Union{Ab
     P[1, (2 * part + 1):end] = ones(1, part + rem)
 
     # Get probabilities of second class
-    P[2, :] = 1 .- P[1, :]
+    P[2, :] = 1 .- view(P, 1, :)
 
     # Scale the data
-    X = X .- minimum(X, dims=2)
-    X = X ./ maximum(abs.(X), dims=2)
+    X .-= minimum(X, dims=2)
+    X ./= maximum(abs.(X), dims=2)
 
     return X, P
 end
@@ -129,7 +129,7 @@ function create_test(D_features::Int, T_instances::Int; rng::Union{AbstractRNG,I
 end
 
 # Enhanced benchmark function with memory measurement
-function benchmark_function_with_memory(func_name::String, func, args...; N_runs::Int=10)
+function benchmark_function_with_memory(func_name::String, func, D::Int, T::Int, args...; N_runs::Int=10)
     # Warmup
     func(args...)
 
@@ -141,10 +141,6 @@ function benchmark_function_with_memory(func_name::String, func, args...; N_runs
         GC.gc()  # Consistent memory state
         memories[i] = @allocated times[i] = @elapsed func(args...)
     end
-
-    # Extract D and T from the test setup (assumes create_test was used)
-    D = size(args[2], 1)  # X matrix is second argument
-    T = size(args[2], 2)  # X matrix is second argument
 
     return BenchmarkResult(
         func_name, D, T, times,
@@ -163,19 +159,36 @@ function analyze_scaling(results::Vector{BenchmarkResult}, param::Symbol)
     end
     y_vals = Float64[r.time_median for r in results]
 
+    # Check for constant y values (avoid NaN)
+    if std(y_vals) < 1e-15
+        # Essentially constant - return special values
+        return (slope=0.0, intercept=y_vals[1], r_squared=1.0)
+    end
+
     # Fit linear model: y = α + β×x
     n = length(x_vals)
     x_mean = mean(x_vals)
     y_mean = mean(y_vals)
 
-    β = sum((x_vals .- x_mean) .* (y_vals .- y_mean)) / sum((x_vals .- x_mean).^2)
+    denom = sum((x_vals .- x_mean).^2)
+    if denom < 1e-15
+        # Constant x values - should not happen with our test setup
+        return (slope=0.0, intercept=y_mean, r_squared=0.0)
+    end
+
+    β = sum((x_vals .- x_mean) .* (y_vals .- y_mean)) / denom
     α = y_mean - β * x_mean
 
     # Calculate R²
     y_pred = α .+ β .* x_vals
     ss_res = sum((y_vals .- y_pred).^2)
     ss_tot = sum((y_vals .- y_mean).^2)
-    r_squared = 1 - ss_res / ss_tot
+
+    r_squared = if ss_tot < 1e-15
+        1.0  # Perfect fit for constant data
+    else
+        1 - ss_res / ss_tot
+    end
 
     return (slope=β, intercept=α, r_squared=r_squared)
 end
@@ -188,7 +201,7 @@ function benchmark_update_G!(D::Int, T::Int, N_runs::Int=10)
     return benchmark_function_with_memory(
         "update_G!",
         (G, X, P, C, W, L, epsC) -> update_G!(G, X, P, C, W, L, epsC),
-        G, X, P, C, W, L, model.epsC;
+        D, T, G, X, P, C, W, L, model.epsC;
         N_runs=N_runs
     )
 end
@@ -200,7 +213,7 @@ function benchmark_update_W!(D::Int, T::Int, N_runs::Int=10)
     return benchmark_function_with_memory(
         "update_W!",
         (W, X, C, G, epsW) -> update_W!(W, X, C, G, epsW),
-        W, X, C, G, model.epsW;
+        D, T, W, X, C, G, model.epsW;
         N_runs=N_runs
     )
 end
@@ -212,7 +225,7 @@ function benchmark_update_C!(D::Int, T::Int, N_runs::Int=10)
     return benchmark_function_with_memory(
         "update_C!",
         (C, X, G) -> update_C!(C, X, G),
-        C, X, G;
+        D, T, C, X, G;
         N_runs=N_runs
     )
 end
@@ -224,7 +237,7 @@ function benchmark_update_L!(D::Int, T::Int, N_runs::Int=10)
     return benchmark_function_with_memory(
         "update_L!",
         (L, P, G) -> update_L!(L, P, G),
-        L, P, G;
+        D, T, L, P, G;
         N_runs=N_runs
     )
 end
@@ -236,7 +249,7 @@ function benchmark_calc_loss(D::Int, T::Int, N_runs::Int=10)
     return benchmark_function_with_memory(
         "calc_loss",
         (X, P, C, W, L, G, epsC, epsW) -> calc_loss(X, P, C, W, L, G, epsC, epsW),
-        X, P, C, W, L, G, model.epsC, model.epsW;
+        D, T, X, P, C, W, L, G, model.epsC, model.epsW;
         N_runs=N_runs
     )
 end
@@ -307,34 +320,91 @@ function run_scaling_benchmarks(; N_runs::Int=10)
         all_analyses[func_name] = (t_analysis, d_analysis)
     end
 
-    # Summary table
-    println("\n" * "="^80)
+    # Simplified summary table
+    println("\n" * "="^70)
     println("SCALING SUMMARY")
-    println("="^80)
-    println(Printf.@sprintf("%-12s | %-12s | %-5s | %-12s | %-5s | %s", "Function", "T-Slope (s/T)", "T-R²", "D-Slope (s/D)", "D-R²", "Status"))
-    println("-"^80)
+    println("="^70)
+    println(Printf.@sprintf("%-12s | %-12s | %-5s | %-12s | %-5s",
+        "Function", "T-Slope (s/T)", "T-R²", "D-Slope (s/D)", "D-R²"))
+    println("-"^70)
 
     for func_name in ["update_G!", "update_W!", "update_C!", "update_L!", "calc_loss"]
         t_analysis, d_analysis = all_analyses[func_name]
 
-        # Determine status
-        t_status = t_analysis.r_squared > 0.95 ? "✓" : "⚠"
-        d_status = d_analysis.r_squared > 0.95 ? "✓" : "⚠"
-
-        # Special case for update_L! - should be constant in D
-        if func_name == "update_L!" && abs(d_analysis.slope) < 1e-9
-            d_status = "✓ (const)"
-        end
-
-        overall_status = (t_status == "✓" && (d_status == "✓" || d_status == "✓ (const)")) ? "Linear" : "Check"
-
-        println(Printf.@sprintf("%-12s | %-12s | %-5.3f | %-12s | %-5.3f | %s",
+        println(Printf.@sprintf("%-12s | %-12s | %-5.3f | %-12s | %-5.3f",
             func_name,
             Printf.@sprintf("%.2e", t_analysis.slope),
             t_analysis.r_squared,
             Printf.@sprintf("%.2e", d_analysis.slope),
-            d_analysis.r_squared,
-            overall_status))
+            d_analysis.r_squared))
+    end
+
+    # Timing summary for largest test cases
+    println("\n" * "="^90)
+    println("TIMING SUMMARY FOR LARGEST CASES")
+    println("="^90)
+    println(Printf.@sprintf("%-12s | %-20s | %-20s", "Function", "(D=10, T=1M)", "(D=100K, T=100)"))
+    println(Printf.@sprintf("%-12s | %-20s | %-20s", "", "Time (ms) | Mem (MB)", "Time (ms) | Mem (MB)"))
+    println("-"^90)
+
+    for func_name in ["update_G!", "update_W!", "update_C!", "update_L!", "calc_loss"]
+        t_results, d_results = all_results[func_name]
+
+        # Find largest T case (D=10, T=1M) - should be last in t_results
+        large_t_result = t_results[end]
+        large_t_time = large_t_result.time_median * 1000  # Convert to ms
+        large_t_mem = large_t_result.memory_allocated / 1024^2  # Convert to MB
+
+        # Find largest D case (D=100K, T=100) - should be last in d_results
+        large_d_result = d_results[end]
+        large_d_time = large_d_result.time_median * 1000  # Convert to ms
+        large_d_mem = large_d_result.memory_allocated / 1024^2  # Convert to MB
+
+        println(Printf.@sprintf("%-12s | %10.6f | %10.6f | %10.6f | %10.6f",
+            func_name, large_t_time, large_t_mem, large_d_time, large_d_mem))
+    end
+
+
+    # Add successive difference analysis
+    println("\n" * "="^70)
+    println("SUCCESSIVE DIFFERENCES")
+    println("="^70)
+    println("Checking proportional increases in timing and memory between successive parameter values...")
+    println()
+
+    for func_name in ["update_G!", "update_W!", "update_C!", "update_L!", "calc_loss"]
+        t_results, d_results = all_results[func_name]
+
+        println("$func_name:")
+
+        # T-scaling successive analysis
+        println("  T-scaling (Fixed D=10):")
+        for i in 2:length(t_results)
+            prev = t_results[i-1]
+            curr = t_results[i]
+
+            param_ratio = curr.T / prev.T
+            time_ratio = curr.time_median / prev.time_median
+            mem_ratio = curr.memory_allocated / prev.memory_allocated
+
+            println(Printf.@sprintf("    T: %d→%d (×%.1f) | Time: ×%.2f | Mem: ×%.2f",
+                prev.T, curr.T, param_ratio, time_ratio, mem_ratio))
+        end
+
+        # D-scaling successive analysis
+        println("  D-scaling (Fixed T=100):")
+        for i in 2:length(d_results)
+            prev = d_results[i-1]
+            curr = d_results[i]
+
+            param_ratio = curr.D / prev.D
+            time_ratio = curr.time_median / prev.time_median
+            mem_ratio = curr.memory_allocated / prev.memory_allocated
+
+            println(Printf.@sprintf("    D: %d→%d (×%.1f) | Time: ×%.2f | Mem: ×%.2f",
+                prev.D, curr.D, param_ratio, time_ratio, mem_ratio))
+        end
+        println()
     end
 
     return all_results, all_analyses
@@ -343,5 +413,6 @@ end
 # Run the benchmark if called directly
 if abspath(PROGRAM_FILE) == @__FILE__
     results, analyses = run_scaling_benchmarks(N_runs=10)
+
     println("\nScaling benchmark complete!")
 end
