@@ -109,9 +109,9 @@ end
 
 # Find any empty clusters
 function find_empty(G::SparseMatrixCSC{Bool,Int})
-    sumG = sum(G; dims=2)       # Number of instances in each cluster
-    notEmpty = sumG .> eps()    # Find any empty boxes
-    K_new = sum(notEmpty)       # Number of non-empty boxes
+    sumG = sum(G; dims=2)           # Number of instances in each cluster
+    notEmpty = vec(sumG .> eps())   # Find any empty boxes
+    K_new = sum(notEmpty)           # Number of non-empty boxes
     return notEmpty, K_new
 end
 
