@@ -672,7 +672,9 @@ end
             model_iter_pred = eSPAClassifier(;
                 K=K_clusters, iterative_pred=true, random_state=42
             )
-            P_iter, _ = eSPA.predict_proba(model_iter_pred, fitresult.C, fitresult.W, fitresult.L, X_test)
+            P_iter, _ = eSPA.predict_proba(
+                model_iter_pred, fitresult.C, fitresult.W, fitresult.L, X_test
+            )
             @test size(P_iter) == (M_classes, 10)
             @test all(sum(P_iter; dims=1) .≈ 1.0)
             @test all(P_iter .>= 0)
@@ -682,18 +684,24 @@ end
                 model_repro = eSPAClassifier(;
                     K=K_clusters, iterative_pred=iterative_pred, random_state=123
                 )
-                P1, _ = eSPA.predict_proba(model_repro, fitresult.C, fitresult.W, fitresult.L, X_test)
+                P1, _ = eSPA.predict_proba(
+                    model_repro, fitresult.C, fitresult.W, fitresult.L, X_test
+                )
 
                 model_repro2 = eSPAClassifier(;
                     K=K_clusters, iterative_pred=iterative_pred, random_state=123
                 )
-                P2, _ = eSPA.predict_proba(model_repro2, fitresult.C, fitresult.W, fitresult.L, X_test)
+                P2, _ = eSPA.predict_proba(
+                    model_repro2, fitresult.C, fitresult.W, fitresult.L, X_test
+                )
                 @test P1 ≈ P2
             end
 
             # Test single instance prediction
             X_single = X_transposed[:, 1:1]
-            P_single, _ = eSPA.predict_proba(model, fitresult.C, fitresult.W, fitresult.L, X_single)
+            P_single, _ = eSPA.predict_proba(
+                model, fitresult.C, fitresult.W, fitresult.L, X_single
+            )
             @test size(P_single) == (M_classes, 1)
             @test sum(P_single) ≈ 1.0
         end
@@ -841,7 +849,13 @@ end
             fitresult_unbias = mach_unbias.fitresult
             report_unbias = MLJBase.report(mach_unbias)
 
-            _, G_unbias = eSPA.predict_proba(model_unbias, fitresult_unbias.C, fitresult_unbias.W, fitresult_unbias.L, X_transposed)
+            _, G_unbias = eSPA.predict_proba(
+                model_unbias,
+                fitresult_unbias.C,
+                fitresult_unbias.W,
+                fitresult_unbias.L,
+                X_transposed,
+            )
             @test G_unbias == report_unbias.G
 
             # Test unbias=true + iterative_pred=true case
@@ -859,7 +873,13 @@ end
             fitresult_iter = mach_iter.fitresult
             report_iter = MLJBase.report(mach_iter)
 
-            _, G_iter = eSPA.predict_proba(model_iter, fitresult_iter.C, fitresult_iter.W, fitresult_iter.L, X_transposed)
+            _, G_iter = eSPA.predict_proba(
+                model_iter,
+                fitresult_iter.C,
+                fitresult_iter.W,
+                fitresult_iter.L,
+                X_transposed,
+            )
             @test G_iter == report_iter.G
         end
     end

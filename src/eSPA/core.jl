@@ -241,7 +241,11 @@ end
 
 # Prediction function
 function predict_proba(
-    model::eSPAClassifier, C::AbstractMatrix{Tf}, W::AbstractVector{Tf}, L::AbstractMatrix{Tf}, X::AbstractMatrix{Tf}
+    model::eSPAClassifier,
+    C::AbstractMatrix{Tf},
+    W::AbstractVector{Tf},
+    L::AbstractMatrix{Tf},
+    X::AbstractMatrix{Tf},
 ) where {Tf<:AbstractFloat}
     # Get dimensions
     T_instances = size(X, 2)
