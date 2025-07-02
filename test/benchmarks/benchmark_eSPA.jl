@@ -32,7 +32,7 @@ include("../../src/eSPA/core.jl")
 include("../../src/eSPA/extras.jl")
 include("../../src/common/functions.jl")
 
-# Function to sanitise values for JSON serialization
+# Function to sanitise values for JSON serialisation
 function sanitise(value::Real)
     if isnan(value)
         return 0.0  # Replace NaN with 0
@@ -74,19 +74,19 @@ function make_worms(
 
     # First cluster
     X[1:2, 1:part] = rand(rng, MultivariateNormal(µ .* [1, -1], σ .* [1 1; 1 2]), part)
-    P[1, 1:part] = ones(1, part)
+    P[1, 1:part] = ones(1, part)    # Assign all instances to class 1
 
     # Second cluster
     X[1:2, (part + 1):(2 * part)] = rand(
         rng, MultivariateNormal(µ .* [0, 0], σ .* [1 1; 1 2]), part
     )
-    P[1, (part + 1):(2 * part)] = zeros(1, part)
+    P[1, (part + 1):(2 * part)] = zeros(1, part)    # Assign all instances to class 2
 
     # Third cluster
     X[1:2, (2 * part + 1):end] = rand(
         rng, MultivariateNormal(µ .* [-1, 1], σ .* [1 1; 1 2]), part + rem
     )
-    P[1, (2 * part + 1):end] = ones(1, part + rem)
+    P[1, (2 * part + 1):end] = ones(1, part + rem)    # Assign all instances to class 1
 
     # Get probabilities of second class
     P[2, :] = 1 .- view(P, 1, :)
@@ -126,9 +126,9 @@ function create_model(;
     )
 end
 
-# Function to create test data once per (D,T) combination
+# Function to create test data in MLJ format
 function create_test_data(D_features::Int, T_instances::Int)
-    # Use fixed seed for data generation (same data for all runs)
+    # Use fixed seed for data generation
     rng = MersenneTwister(42)
 
     # Get worms data
@@ -142,7 +142,7 @@ function create_test_data(D_features::Int, T_instances::Int)
     return X_table, y_cat
 end
 
-# Benchmark entire model fitting process - fits model once and extracts all section data
+# Benchmark entire model fitting process
 function benchmark_model_fitting(D::Int, T::Int, N_runs::Int=10)
     # Create test data once for this (D,T) combination
     X_table, y_cat = create_test_data(D, T)
@@ -207,12 +207,12 @@ function benchmark_model_fitting(D::Int, T::Int, N_runs::Int=10)
         total_times[i] = init_times[i] + training_times[i] + unbias_times[i]
     end
 
-    # Create BenchmarkResult objects for each section
     # Calculate total memory as sum of the three main sections
     total_memories = [
         init_memories[i] + training_memories[i] + unbias_memories[i] for i in 1:N_runs
     ]
 
+    # Create BenchmarkResult objects for each section
     total_result = BenchmarkResult(
         "model_fitting",
         D,
@@ -385,7 +385,7 @@ function analyze_scaling(results::Vector{BenchmarkResult}, param::Symbol)
     r_squared = if ss_tot < 1e-15
         1.0  # Perfect fit for constant data
     else
-        1 - ss_res / ss_tot
+        1.0 - ss_res / ss_tot
     end
 
     return (slope=β, intercept=α, r_squared=r_squared)
