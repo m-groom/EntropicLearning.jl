@@ -110,10 +110,23 @@ struct BenchmarkResult
     memory_allocated::Int       # Bytes allocated per run (median)
 end
 
-# Function to create data in MLJ format
-function create_test_data(
-    D_features::Int, T_instances::Int; rng::Union{AbstractRNG,Integer}=Random.default_rng()
-)
+# Function to create model only (data created separately)
+function create_model(;rng::Union{AbstractRNG,Integer}=Random.default_rng(), K_clusters::Int=3, epsC::Float64=1e-3, epsW::Float64=1e-1)
+    return eSPAClassifier(;
+        K=K_clusters,
+        epsC=epsC,
+        epsW=epsW,
+        unbias=true,
+        iterative_pred=true,
+        random_state=rng,
+    )
+end
+
+# Function to create test data once per (D,T) combination
+function create_test_data(D_features::Int, T_instances::Int)
+    # Use fixed seed for data generation (same data for all runs)
+    rng = MersenneTwister(42)
+
     # Get worms data
     X, P = make_worms(D_features, T_instances; random_state=rng)
     y = [argmax(view(P, :, t)) for t in axes(P, 2)]
@@ -123,6 +136,138 @@ function create_test_data(
     y_cat = MLJBase.categorical(y)
 
     return X_table, y_cat
+end
+
+# Benchmark entire model fitting process - fits model once and extracts all section data
+function benchmark_model_fitting(D::Int, T::Int, N_runs::Int=10)
+    # Create test data once for this (D,T) combination
+    X_table, y_cat = create_test_data(D, T)
+
+    # Collect timing data from model reports
+    total_times = Vector{Float64}(undef, N_runs)
+    init_times = Vector{Float64}(undef, N_runs)
+    init_memories = Vector{Int}(undef, N_runs)
+    training_times = Vector{Float64}(undef, N_runs)
+    training_memories = Vector{Int}(undef, N_runs)
+    unbias_times = Vector{Float64}(undef, N_runs)
+    unbias_memories = Vector{Int}(undef, N_runs)
+
+    # Warmup
+    temp = MLJBase.machine(create_model(rng=MersenneTwister(42)), X_table, y_cat)
+    MLJBase.fit!(temp; verbosity=0)
+
+    for i in 1:N_runs
+        # Create fresh model for each run (only thing that changes between runs)
+        model_run = create_model(rng=MersenneTwister(42 + i))
+
+        # Fit the model once
+        GC.gc()  # Consistent memory state
+        mach = MLJBase.machine(model_run, X_table, y_cat)
+        MLJBase.fit!(mach; verbosity=0)
+
+                # Extract all timing data from this single fit
+        report = MLJBase.report(mach)
+        timings = report.timings
+
+        # Initialisation section
+        if haskey(timings.inner_timers, "Initialisation")
+            init_timer = timings["Initialisation"]
+            init_times[i] = TimerOutputs.time(init_timer) / 1e9
+            init_memories[i] = TimerOutputs.allocated(init_timer)
+        else
+            init_times[i] = 0.0
+            init_memories[i] = 0
+        end
+
+        # Training section
+        if haskey(timings.inner_timers, "Training")
+            training_timer = timings["Training"]
+            training_times[i] = TimerOutputs.time(training_timer) / 1e9
+            training_memories[i] = TimerOutputs.allocated(training_timer)
+        else
+            training_times[i] = 0.0
+            training_memories[i] = 0
+        end
+
+        # Unbias section
+        if haskey(timings.inner_timers, "Unbias")
+            unbias_timer = timings["Unbias"]
+            unbias_times[i] = TimerOutputs.time(unbias_timer) / 1e9
+            unbias_memories[i] = TimerOutputs.allocated(unbias_timer)
+        else
+            unbias_times[i] = 0.0
+            unbias_memories[i] = 0
+        end
+
+        # Total time is sum of the three main sections
+        total_times[i] = init_times[i] + training_times[i] + unbias_times[i]
+    end
+
+    # Create BenchmarkResult objects for each section
+    # Calculate total memory as sum of the three main sections
+    total_memories = [init_memories[i] + training_memories[i] + unbias_memories[i] for i in 1:N_runs]
+
+    total_result = BenchmarkResult(
+        "model_fitting",
+        D, T,
+        total_times,
+        sanitise(median(total_times)),
+        sanitise(std(total_times)),
+        Int(median(total_memories)),
+    )
+
+    init_result = BenchmarkResult(
+        "initialisation",
+        D, T,
+        init_times,
+        sanitise(median(init_times)),
+        sanitise(std(init_times)),
+        Int(median(init_memories)),
+    )
+
+    training_result = BenchmarkResult(
+        "training",
+        D, T,
+        training_times,
+        sanitise(median(training_times)),
+        sanitise(std(training_times)),
+        Int(median(training_memories)),
+    )
+
+    unbias_result = BenchmarkResult(
+        "unbias",
+        D, T,
+        unbias_times,
+        sanitise(median(unbias_times)),
+        sanitise(std(unbias_times)),
+        Int(median(unbias_memories)),
+    )
+
+    return Dict(
+        "model_fitting" => total_result,
+        "initialisation" => init_result,
+        "training" => training_result,
+        "unbias" => unbias_result
+    )
+end
+
+# Function to create data and initialise parameters for direct testing (used by core function benchmarks)
+function create_test(
+    D_features::Int, T_instances::Int; rng::Union{AbstractRNG,Integer}=Random.default_rng()
+)
+    # Get worms data
+    X, P = make_worms(D_features, T_instances; random_state=rng)
+    y = [argmax(view(P, :, t)) for t in axes(P, 2)]
+    M_classes = size(P, 1)
+    K_clusters = 3
+
+    # Initialise the model
+    model = create_model(;rng=rng, K_clusters=K_clusters, epsC=1e-3, epsW=1e-1)
+
+    # Initialise parameters
+    C, W, L, G = initialise(model, X, y, D_features, T_instances, M_classes)
+
+    return X, P, C, W, L, G, model
 end
 
 # Scaling test parameter definitions - doubling progression
@@ -160,33 +305,22 @@ const D_SCALING_PARAMS = [
     (D=81920, T=100),
 ]
 
-# Function to create data and initialise parameters for direct testing
-function create_test(
-    D_features::Int, T_instances::Int; rng::Union{AbstractRNG,Integer}=Random.default_rng()
-)
-    # Get worms data
-    X, P = make_worms(D_features, T_instances; random_state=rng)
-    y = [argmax(view(P, :, t)) for t in axes(P, 2)]
-    M_classes = size(P, 1)
-    K_clusters = 3
+# Smaller test parameter sets for quick testing
+const T_SCALING_PARAMS_TEST = [
+    (D=10, T=100),
+    (D=10, T=200),
+    (D=10, T=400),
+    (D=10, T=800),
+]
 
-    # Initialise the model
-    model = eSPAClassifier(;
-        K=K_clusters,
-        epsC=1e-3,
-        epsW=1e-1,
-        unbias=true,
-        iterative_pred=true,
-        random_state=rng,
-    )
+const D_SCALING_PARAMS_TEST = [
+    (D=10, T=100),
+    (D=20, T=100),
+    (D=40, T=100),
+    (D=80, T=100),
+]
 
-    # Initialise parameters
-    C, W, L, G = initialise(model, X, y, D_features, T_instances, M_classes)
-
-    return X, P, C, W, L, G, model
-end
-
-# Enhanced benchmark function with memory measurement
+# Benchmarking function with memory measurement
 function benchmark_function_with_memory(
     func_name::String, func, D::Int, T::Int, args...; N_runs::Int=10
 )
@@ -375,13 +509,28 @@ function print_scaling_results(
     return t_analysis, d_analysis
 end
 
-# Main scaling benchmark function
-function run_scaling_benchmarks(; N_runs::Int=10)
-    println("=== eSPA Core Functions Scaling Analysis ===")
-    println("Testing scaling behavior with D ∈ [10, 100K] and T ∈ [100, 1M]")
+# Main scaling benchmark function - refactored for efficiency
+function run_scaling_benchmarks(; N_runs::Int=10, test_mode::Bool=false)
+    if test_mode
+        t_params = T_SCALING_PARAMS_TEST
+        d_params = D_SCALING_PARAMS_TEST
+        mode_str = "TEST MODE - "
+    else
+        t_params = T_SCALING_PARAMS
+        d_params = D_SCALING_PARAMS
+        mode_str = ""
+    end
+
+    println("=== $(mode_str)eSPA Core Functions and Model Fitting Scaling Analysis ===")
+    if test_mode
+        println("Testing scaling behavior with D ∈ [10, 80] and T ∈ [100, 800]")
+    else
+        println("Testing scaling behavior with D ∈ [10, 100K] and T ∈ [100, 1M]")
+    end
     println("Number of runs per test: $N_runs\n")
 
-    functions_to_test = [
+    # Define core functions and model fitting sections separately
+    core_functions = [
         ("update_G!", benchmark_update_G!),
         ("update_W!", benchmark_update_W!),
         ("update_C!", benchmark_update_C!),
@@ -389,22 +538,26 @@ function run_scaling_benchmarks(; N_runs::Int=10)
         ("calc_loss", benchmark_calc_loss),
     ]
 
+    model_fitting_sections = ["model_fitting", "initialisation", "training", "unbias"]
+
     all_results = Dict{String,Tuple{Vector{BenchmarkResult},Vector{BenchmarkResult}}}()
     all_analyses = Dict{String,Tuple{NamedTuple,NamedTuple}}()
 
-    for (func_name, benchmark_func) in functions_to_test
+    # Benchmark core functions individually
+    for (func_name, benchmark_func) in core_functions
         println("\n" * "="^60)
+        println("Benchmarking Core Function: $func_name")
 
         # T-scaling benchmarks (fixed D=10)
         println("\nT-Scaling Tests (Fixed D=10):")
         t_results = benchmark_function_scaling(
-            benchmark_func, T_SCALING_PARAMS, func_name; N_runs=N_runs
+            benchmark_func, t_params, func_name; N_runs=N_runs
         )
 
         # D-scaling benchmarks (fixed T=100)
         println("\nD-Scaling Tests (Fixed T=100):")
         d_results = benchmark_function_scaling(
-            benchmark_func, D_SCALING_PARAMS, func_name; N_runs=N_runs
+            benchmark_func, d_params, func_name; N_runs=N_runs
         )
 
         # Store results
@@ -413,6 +566,59 @@ function run_scaling_benchmarks(; N_runs::Int=10)
         # Analyze and print scaling
         t_analysis, d_analysis = print_scaling_results(func_name, t_results, d_results)
         all_analyses[func_name] = (t_analysis, d_analysis)
+    end
+
+    # Benchmark model fitting sections efficiently (all at once per parameter set)
+    println("\n" * "="^60)
+    println("Benchmarking Model Fitting Sections (all at once)")
+
+    # Collect all model fitting results
+    model_fitting_t_results = Dict{String,Vector{BenchmarkResult}}()
+    model_fitting_d_results = Dict{String,Vector{BenchmarkResult}}()
+
+    # Initialize result vectors for each section
+    for section in model_fitting_sections
+        model_fitting_t_results[section] = BenchmarkResult[]
+        model_fitting_d_results[section] = BenchmarkResult[]
+    end
+
+    # T-scaling benchmarks for model fitting (fixed D=10)
+    println("\nT-Scaling Tests for Model Fitting (Fixed D=10):")
+    for (i, param) in enumerate(t_params)
+        print("  Testing D=$(param.D), T=$(param.T) ($i/$(length(t_params)))... ")
+
+        # Call the all-sections benchmark function once
+        section_results = benchmark_model_fitting(param.D, param.T, N_runs)
+
+        # Distribute results to appropriate vectors
+        for section in model_fitting_sections
+            push!(model_fitting_t_results[section], section_results[section])
+        end
+
+        println("$(round(section_results["model_fitting"].time_median * 1000, digits=6)) ms (total)")
+    end
+
+    # D-scaling benchmarks for model fitting (fixed T=100)
+    println("\nD-Scaling Tests for Model Fitting (Fixed T=100):")
+    for (i, param) in enumerate(d_params)
+        print("  Testing D=$(param.D), T=$(param.T) ($i/$(length(d_params)))... ")
+
+        # Call the all-sections benchmark function once
+        section_results = benchmark_model_fitting(param.D, param.T, N_runs)
+
+        # Distribute results to appropriate vectors
+        for section in model_fitting_sections
+            push!(model_fitting_d_results[section], section_results[section])
+        end
+
+        println("$(round(section_results["model_fitting"].time_median * 1000, digits=6)) ms (total)")
+    end
+
+    # Store model fitting results and analyze
+    for section in model_fitting_sections
+        all_results[section] = (model_fitting_t_results[section], model_fitting_d_results[section])
+        t_analysis, d_analysis = print_scaling_results(section, model_fitting_t_results[section], model_fitting_d_results[section])
+        all_analyses[section] = (t_analysis, d_analysis)
     end
 
     # Simplified summary table
@@ -431,7 +637,7 @@ function run_scaling_benchmarks(; N_runs::Int=10)
     )
     println("-"^70)
 
-    for func_name in ["update_G!", "update_W!", "update_C!", "update_L!", "calc_loss"]
+    for func_name in ["update_G!", "update_W!", "update_C!", "update_L!", "calc_loss", "model_fitting", "initialisation", "training", "unbias"]
         t_analysis, d_analysis = all_analyses[func_name]
 
         println(
@@ -462,7 +668,7 @@ function run_scaling_benchmarks(; N_runs::Int=10)
     )
     println("-"^70)
 
-    for func_name in ["update_G!", "update_W!", "update_C!", "update_L!", "calc_loss"]
+    for func_name in ["update_G!", "update_W!", "update_C!", "update_L!", "calc_loss", "model_fitting", "initialisation", "training", "unbias"]
         t_results, d_results = all_results[func_name]
 
         # Find largest T case (D=10, T=1M) - should be last in t_results
@@ -496,7 +702,7 @@ function run_scaling_benchmarks(; N_runs::Int=10)
     )
     println()
 
-    for func_name in ["update_G!", "update_W!", "update_C!", "update_L!", "calc_loss"]
+    for func_name in ["update_G!", "update_W!", "update_C!", "update_L!", "calc_loss", "model_fitting", "initialisation", "training", "unbias"]
         t_results, d_results = all_results[func_name]
 
         println("$func_name:")
@@ -571,9 +777,13 @@ function save_results_to_json(all_results, all_analyses)
     export_data["metadata"] = Dict(
         "timestamp" => string(now()),
         "julia_version" => string(VERSION),
-        "description" => "eSPA core functions scaling benchmark results",
+        "description" => "eSPA core functions and model fitting sections scaling benchmark results",
         "T_range" => "100 to 819,200 (fixed D=10)",
         "D_range" => "10 to 81,920 (fixed T=100)",
+        "functions_benchmarked" => [
+            "update_G!", "update_W!", "update_C!", "update_L!", "calc_loss",
+            "model_fitting", "initialisation", "training", "unbias"
+        ],
     )
 
     # Add raw benchmark results
@@ -673,7 +883,20 @@ end
 
 # Run the benchmark if called directly
 if abspath(PROGRAM_FILE) == @__FILE__
-    results, analyses = run_scaling_benchmarks(; N_runs=10)
+    # Ask user whether to run test mode or full benchmark
+    println("Choose benchmark mode:")
+    println("1. Test mode (quick, smaller parameter ranges)")
+    println("2. Full benchmark (extensive, may take a long time)")
+    print("Enter choice (1 or 2): ")
+    choice = readline()
+
+    if choice == "1"
+        println("\nRunning in TEST MODE...")
+        results, analyses = run_scaling_benchmarks(; N_runs=3, test_mode=true)
+    else
+        println("\nRunning FULL BENCHMARK...")
+        results, analyses = run_scaling_benchmarks(; N_runs=10)
+    end
 
     println("\nScaling benchmark complete!")
 end
