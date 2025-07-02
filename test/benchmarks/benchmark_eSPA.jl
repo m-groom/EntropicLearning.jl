@@ -762,13 +762,6 @@ end
 function save_results_to_json(all_results, all_analyses)
     println("\nSaving benchmark data to JSON...")
 
-    # Create output directory if it doesn't exist
-    output_dir = "benchmark_results"
-    if !isdir(output_dir)
-        mkdir(output_dir)
-        println("Created directory: $output_dir/")
-    end
-
     # Prepare data structure for JSON export
     export_data = Dict{String,Any}()
 
@@ -870,7 +863,7 @@ function save_results_to_json(all_results, all_analyses)
     end
 
     # Generate filename
-    filename = joinpath(output_dir, "espa_benchmark_results.json")
+    filename = "espa_benchmark_results.json"
 
     # Write to JSON file
     open(filename, "w") do io
