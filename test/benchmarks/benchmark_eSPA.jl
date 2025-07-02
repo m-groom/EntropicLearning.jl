@@ -26,7 +26,6 @@ using JSON3
 
 # Access eSPA module
 import EntropicLearning.eSPA as eSPA
-using EntropicLearning.eSPA: eSPAFitResult
 
 # Include the core and extras module functions
 include("../../src/eSPA/core.jl")
@@ -157,8 +156,8 @@ function benchmark_model_fitting(D::Int, T::Int, N_runs::Int=10)
     MLJBase.fit!(temp; verbosity=0)
 
     for i in 1:N_runs
-        # Create fresh model for each run (only thing that changes between runs)
-        model_run = create_model(rng=MersenneTwister(42 + i))
+        # Create fresh model for each run
+        model_run = create_model(rng=MersenneTwister(42))
 
         # Fit the model once
         GC.gc()  # Consistent memory state

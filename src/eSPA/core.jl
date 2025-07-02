@@ -241,12 +241,12 @@ end
 
 # Prediction function
 function predict_proba(
-    model::eSPAClassifier, fitresult::eSPAFitResult, X::AbstractMatrix{Tf}
+    model::eSPAClassifier, C::AbstractMatrix{Tf}, W::AbstractVector{Tf}, L::AbstractMatrix{Tf}, X::AbstractMatrix{Tf}
 ) where {Tf<:AbstractFloat}
     # Get dimensions
     T_instances = size(X, 2)
-    K_clusters = size(fitresult.C, 2)
-    M_classes = size(fitresult.L, 1)
+    K_clusters = size(C, 2)
+    M_classes = size(L, 1)
 
     # Initialise the random number generator
     rng = get_rng(model.random_state)
@@ -262,13 +262,13 @@ function predict_proba(
     P = Matrix{Tf}(undef, M_classes, T_instances)
 
     # Update Γ
-    update_G!(G, X, P, fitresult.C, fitresult.W, fitresult.L, Tf(0.0))
+    update_G!(G, X, P, C, W, L, Tf(0.0))
 
     # Update Π
-    update_P!(P, fitresult.L, G)
+    update_P!(P, L, G)
 
     if model.iterative_pred
-        iterative_predict!(P, G, model, X, fitresult.C, fitresult.W, fitresult.L)
+        iterative_predict!(P, G, model, X, C, W, L)
     end
 
     # Return Π

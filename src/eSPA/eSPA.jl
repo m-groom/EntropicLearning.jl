@@ -52,9 +52,9 @@ function MMI.fit(model::eSPAClassifier, verbosity::Int, X, y)
     # TODO: write a data front-end
     X_mat = MMI.matrix(X; transpose=true)
     D_features, T_instances = size(X_mat)
-    classes = MMI.classes(y[1])
+    classes = MMI.classes(y[1]) # classes_seen = MMI.decoder(classes)(unique(y_int))
     M_classes = length(classes)
-    y_int = MMI.int(y)
+    y_int = MMI.int(y)  # TODO: pass y_int using data front-end
 
     # TODO: make this a function
     Tf = eltype(X_mat)
@@ -151,7 +151,7 @@ function MMI.predict(model::eSPAClassifier, fitresult::eSPAFitResult, Xnew)
     # TODO: write a data front-end
     X_mat = MMI.matrix(Xnew; transpose=true)
 
-    Pi_new, G_new = predict_proba(model, fitresult, X_mat)  # TODO: store G_new in the report
+    Pi_new, G_new = predict_proba(model, fitresult.C, fitresult.W, fitresult.L, X_mat)  # TODO: store G_new in the report
     probabilities = Pi_new'
 
     return MMI.UnivariateFinite(fitresult.classes, probabilities)
