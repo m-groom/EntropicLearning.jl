@@ -577,7 +577,9 @@ are "active" in the distribution.
 # See Also
 - [`entropy`](@ref): The Shannon entropy function used in the computation.
 """
-function effective_dimension(W::AbstractVector{Tf}; normalise::Bool=false) where {Tf<:AbstractFloat}
+function effective_dimension(
+    W::AbstractVector{Tf}; normalise::Bool=false
+) where {Tf<:AbstractFloat}
     # Handle empty vector case
     if isempty(W)
         return zero(Tf)

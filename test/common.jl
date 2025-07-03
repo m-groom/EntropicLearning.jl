@@ -442,7 +442,7 @@ include("../src/common/functions.jl")
             @test effective_dimension(W_uniform; normalise=true) ≈ 1.0 atol = 1e-10
 
             # Test with different uniform distributions
-            W_uniform_2 = fill(1/3, 3)
+            W_uniform_2 = fill(1 / 3, 3)
             @test effective_dimension(W_uniform_2) ≈ 3.0 atol = 1e-10
             @test effective_dimension(W_uniform_2; normalise=true) ≈ 1.0 atol = 1e-10
         end
@@ -489,11 +489,12 @@ include("../src/common/functions.jl")
 
             # Binary distribution with unequal probabilities
             p = 0.3
-            W_binary_unequal = [p, 1-p]
-            expected_entropy = -(p * log(p) + (1-p) * log(1-p))
+            W_binary_unequal = [p, 1 - p]
+            expected_entropy = -(p * log(p) + (1 - p) * log(1 - p))
             expected_eff = exp(expected_entropy)
             @test effective_dimension(W_binary_unequal) ≈ expected_eff atol = 1e-10
-            @test effective_dimension(W_binary_unequal; normalise=true) ≈ expected_eff / 2 atol = 1e-10
+            @test effective_dimension(W_binary_unequal; normalise=true) ≈ expected_eff / 2 atol =
+                1e-10
         end
 
         @testset "monotonicity properties" begin
@@ -503,7 +504,7 @@ include("../src/common/functions.jl")
 
             @test effective_dimension(W_more_uniform) > effective_dimension(W_less_uniform)
             @test effective_dimension(W_more_uniform; normalise=true) >
-                  effective_dimension(W_less_uniform; normalise=true)
+                effective_dimension(W_less_uniform; normalise=true)
         end
     end
 end
