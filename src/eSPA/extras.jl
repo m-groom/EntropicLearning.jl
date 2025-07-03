@@ -269,5 +269,5 @@ function mi_continuous_discrete(
 end
 
 # Helper function to get RNG
-get_rng(random_state::Int) = MersenneTwister(random_state)
+get_rng(random_state::Int) = Xoshiro(random_state)
 get_rng(random_state::AbstractRNG) = random_state
