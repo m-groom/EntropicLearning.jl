@@ -138,10 +138,14 @@ function MMI.fit(model::eSPAClassifier, verbosity::Int, X, y)
         end
     end
 
+    # Estimate the effective number of parameters
+    Deff = effective_dimension(W)
+    n_params = Deff * (K_current + 1) + (M_classes - 1) * K_current
+
     # --- Return fitresult, cache and report ---
     fitresult = eSPAFitResult(C, W, L, classes)
     cache = nothing
-    report = (iterations=iter, loss=loss[1:(iter + 1)], timings=to, G=G)
+    report = (iterations=iter, loss=loss[1:(iter + 1)], timings=to, G=G, n_params=n_params)
 
     return (fitresult, cache, report)
 end

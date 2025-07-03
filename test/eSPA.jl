@@ -365,6 +365,177 @@ include("../src/eSPA/extras.jl")
             @test mi_single[1] == 0.0 # Should be 0 for single sample
         end
     end
+
+    @testset "get_eff function tests" begin
+        @testset "basic functionality" begin
+            # Test basic properties with normalise=true (default)
+            D = 10
+            ε = 1.0
+            f = get_eff(D, ε)
+
+            # Should be between 1/D and 1 when normalised
+            @test f >= 1.0/D
+            @test f <= 1.0
+
+            # Test with normalise=false
+            f_unnorm = get_eff(D, ε; normalise=false)
+            @test f_unnorm ≈ f * D atol=1e-10
+            @test f_unnorm >= 1.0
+            @test f_unnorm <= D
+        end
+
+        @testset "monotonicity properties" begin
+            D = 5
+
+            # Should be monotonically increasing with ε
+            ε_values = [0.001, 0.01, 0.1, 1.0, 10.0]
+            f_values = [get_eff(D, ε) for ε in ε_values]
+
+            for i in 2:length(f_values)
+                @test f_values[i] >= f_values[i-1]
+            end
+        end
+
+        @testset "edge cases" begin
+            D = 4
+
+            # Very small ε should give values close to 1/D
+            f_small = get_eff(D, 1e-10)
+            @test f_small ≈ 1.0/D atol=0.01
+
+            # Large ε should give values close to 1
+            f_large = get_eff(D, 1e10)
+            @test f_large ≈ 1.0 atol=0.01
+
+            # Test D=1 case
+            f_d1 = get_eff(1, 1.0)
+            @test f_d1 == 1.0  # Should always be 1 for D=1
+        end
+
+        @testset "input validation" begin
+            # Test assertions
+            @test_throws AssertionError get_eff(0, 1.0)    # D must be >= 1
+            @test_throws AssertionError get_eff(-1, 1.0)   # D must be >= 1
+            @test_throws AssertionError get_eff(5, 0.0)    # ε must be positive
+            @test_throws AssertionError get_eff(5, -1.0)   # ε must be positive
+        end
+
+        @testset "mathematical properties" begin
+            ε = 0.02
+
+            # Test with different D values - larger D should affect scaling
+            f_d3 = get_eff(3, ε)
+            f_d6 = get_eff(6, ε)
+            # Both should be in valid ranges
+            @test f_d3 >= 1.0/3 && f_d3 <= 1.0
+            @test f_d6 >= 1.0/6 && f_d6 <= 1.0
+        end
+    end
+
+    @testset "get_eps function tests" begin
+        @testset "basic functionality" begin
+            # Test basic properties with normalise=true (default)
+            D = 10
+            Deff = 0.5  # Normalised effective dimension
+            ε = get_eps(D, Deff)
+
+            @test ε > 0.0
+            @test isfinite(ε)
+
+            # Test with normalise=false
+            Deff_unnorm = 5  # Unnormalised (between 1 and D)
+            ε_unnorm = get_eps(D, Deff_unnorm; normalise=false)
+            @test ε_unnorm > 0.0
+            @test isfinite(ε_unnorm)
+        end
+
+        @testset "edge cases" begin
+            D = 4
+
+            # Minimum effective dimension should return very small ε
+            Deff_min = 1.0/D
+            ε_min = get_eps(D, Deff_min)
+            @test ε_min ≈ eps(Float64) atol=1e-10
+
+            # Maximum effective dimension should return Inf
+            Deff_max = 1.0
+            ε_max = get_eps(D, Deff_max)
+            @test ε_max == Inf
+
+            # Just below minimum (should still return eps)
+            Deff_below = 1.0/D - 1e-10
+            ε_below = get_eps(D, Deff_below)
+            @test ε_below ≈ eps(Float64) atol=1e-10
+
+            # Just above maximum (should still return Inf)
+            Deff_above = 1.0 + 1e-10
+            ε_above = get_eps(D, Deff_above)
+            @test ε_above == Inf
+
+            # Test unnormalised edge cases
+            ε_min_unnorm = get_eps(D, 1; normalise=false)
+            @test ε_min_unnorm ≈ eps(Float64) atol=1e-10
+
+            ε_max_unnorm = get_eps(D, D; normalise=false)
+            @test ε_max_unnorm == Inf
+        end
+
+        @testset "input validation" begin
+            # Test assertions
+            @test_throws AssertionError get_eps(0, 0.5)     # D must be >= 1
+            @test_throws AssertionError get_eps(-1, 0.5)    # D must be >= 1
+            @test_throws AssertionError get_eps(5, 0.0)     # Deff must be positive
+            @test_throws AssertionError get_eps(5, -0.1)    # Deff must be positive
+        end
+
+        @testset "inverse relationship" begin
+            # Test that get_eps and get_eff are inverse functions
+            D_values = [5, 10, 20]
+            ε_values = [0.001, 0.01, 0.1, 1.0, 10.0]
+
+            for D in D_values
+                for ε in ε_values
+                    # Test normalised case
+                    f = get_eff(D, ε; normalise=true)
+                    ε_recovered = get_eps(D, f; normalise=true)
+                    @test ε ≈ ε_recovered atol=1e-10 rtol=1e-8
+
+                    # Test unnormalised case
+                    f_unnorm = get_eff(D, ε; normalise=false)
+                    ε_recovered_unnorm = get_eps(D, f_unnorm; normalise=false)
+                    @test ε ≈ ε_recovered_unnorm atol=1e-10 rtol=1e-8
+                end
+            end
+        end
+
+        @testset "monotonicity properties" begin
+            D = 5
+
+            # Should be monotonically increasing with Deff
+            Deff_values = [0.3, 0.5, 0.7, 0.9]
+            ε_values = [get_eps(D, Deff) for Deff in Deff_values]
+
+            for i in 2:length(ε_values)
+                @test ε_values[i-1] <= ε_values[i]
+            end
+        end
+
+        @testset "numerical stability" begin
+            D = 1000
+
+            # Test values very close to boundaries
+            Deff_close_min = 1.0/D + 1e-15
+            Deff_close_max = 1.0 - 1e-15
+
+            ε_close_min = get_eps(D, Deff_close_min)
+            ε_close_max = get_eps(D, Deff_close_max)
+
+            @test isfinite(ε_close_min)
+            @test ε_close_min > 0
+            @test isfinite(ε_close_max)
+            @test ε_close_max > 0
+        end
+    end
 end
 
 @testset "core" begin
@@ -889,7 +1060,7 @@ end
 
         # Train a model using MLJ interface
         model = eSPAClassifier(;
-            K=K_clusters, epsC=0.0, epsW=Inf, mi_init=false, random_state=42
+            K=K_clusters, epsC=0.0, epsW=Inf, mi_init=false, random_state=Random.Xoshiro(42)
         )
         mach = MLJBase.machine(model, X_table, y_cat)
         MLJBase.fit!(mach; verbosity=0)
@@ -897,7 +1068,7 @@ end
         report = MLJBase.report(mach)
 
         # Train a k-means model from Clustering.jl
-        rng = Random.MersenneTwister(42)
+        rng = Random.Xoshiro(42)
         KMeansResult = kmeans(X_transposed, K_clusters; rng=rng, maxiter=200)
 
         # First check that W is uniform

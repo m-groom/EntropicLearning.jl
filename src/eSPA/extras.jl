@@ -1,6 +1,11 @@
 # This file contains functions that are used in the eSPA module but are not part of the
 # core eSPA algorithm.
 
+# Constants for the generalised sigmoid function
+const ALPHA = 0.48303294517787015
+const BETA = 2.236559493796657
+const GAMMA = -1.1385870064168448
+
 """
     compute_mi_cd(c::AbstractVector{Tf}, d::AbstractVector{Ti}, n_neighbors::Int=3) where {Tf<:AbstractFloat,Ti<:Integer}
 
@@ -271,3 +276,98 @@ end
 # Helper function to get RNG
 get_rng(random_state::Int) = Xoshiro(random_state)
 get_rng(random_state::AbstractRNG) = random_state
+
+"""
+    get_eff(D::Ti, ε::Tf; normalise::Bool=true) where {Tf<:AbstractFloat,Ti<:Integer}
+
+Estimates the effective dimension of a probability vector for a given dimension `D` and
+regularisation parameter `ε`.
+
+This function implements a generalised sigmoid fit that models the expected relationship
+between the regularisation parameter `ε` and the effective dimension of probability
+vectors of dimension `D`.
+
+# Arguments
+- `D::Ti`: The total dimension of the probability vector. Must be ≥ 1.
+- `ε::Tf`: The regularisation parameter. Must be positive. Smaller values
+  correspond to more concentrated distributions (lower effective dimension).
+
+# Keyword Arguments
+- `normalise::Bool`: If `true` (default), returns the normalised effective dimension
+  (between 1/D and 1). If `false`, returns the unnormalised effective dimension
+  (between 1 and D).
+
+# Returns
+- `f`: The estimated effective dimension. When `normalise=true`, returns a value
+  between 1/D and 1. When `normalise=false`, returns a value between 1 and D.
+
+# See Also
+- [`get_eps`](@ref): Inverse function that estimates ε for a given D and effective dimension.
+- [`effective_dimension`](@ref): Computes the actual effective dimension of a probability vector.
+"""
+function get_eff(D::Ti, ε::Tf; normalise::Bool=true) where {Tf<:AbstractFloat,Ti<:Integer}
+    # Check input validity
+    @assert D >= 1 "D must be greater than or equal to 1"
+    @assert ε > 0 "ε must be positive"
+    # Return the generalised sigmoid function - normalised by default
+    f = 1 / D + (1 - 1 / D) / (1 + exp(-BETA * (safelog(ε) - GAMMA))) ^ ALPHA
+    if normalise
+        return f
+    else
+        return f * D
+    end
+end
+
+"""
+    get_eps(D::Ti, Deff::Tr; normalise::Bool=true) where {Tr<:Real,Ti<:Integer}
+
+Estimates the regularisation parameter `ε` for a given dimension `D` and effective
+dimension `Deff`.
+
+This function implements the inverse of the generalised sigmoid fit used in
+[`get_eff`](@ref). Given a target effective dimension, it computes the corresponding
+regularisation parameter `ε` that would, in expectation, produce that effective dimension in
+a probability distribution of dimension `D`.
+
+# Arguments
+- `D::Ti`: The total dimension of the probability vector. Must be ≥ 1.
+- `Deff::Tr`: The target effective dimension. Must be positive. When `normalise=true`,
+  it should be between 1/D and 1. When `normalise=false`, it should be between 1 and D.
+
+# Keyword Arguments
+- `normalise::Bool`: If `true` (default), assumes `Deff` is normalised (between 0 and 1).
+  If `false`, assumes `Deff` is unnormalised (between 1 and D).
+
+# Returns
+- `ε`: The estimated regularisation parameter. Returns `eps()` for
+  minimum effective dimensions, `Inf` for maximum effective dimensions, or a positive
+  finite value for intermediate cases.
+
+# See Also
+- [`get_eff`](@ref): Inverse function that estimates effective dimension for a given D and ε.
+- [`effective_dimension`](@ref): Computes the actual effective dimension of a probability vector.
+"""
+function get_eps(D::Ti, Deff::Tr; normalise::Bool=true) where {Tr<:Real,Ti<:Integer}
+    # Check input validity
+    @assert D >= 1 "D must be greater than or equal to 1"
+    @assert Deff > 0 "Deff must be positive"
+
+    # Ensure Deff is a float
+    Deff = float(Deff)
+    Tf = typeof(Deff)
+
+    # Get the normalised effective dimension
+    f = normalise ? Deff : Deff / D
+
+    # Handle edge cases
+    if f <= 1 / D
+        return eps(Tf)
+    elseif f >= 1
+        return Tf(Inf)
+    end
+
+    # Return the inverse of the generalised sigmoid function
+    s = (f - 1 / D) / (1 - 1 / D)
+
+    return exp(GAMMA) * (s^(-1 / ALPHA) - 1)^(-1 / BETA)
+end
