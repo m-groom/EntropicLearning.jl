@@ -2,6 +2,7 @@ module EOS
 
 using MLJModelInterface
 using LinearAlgebra
+using SparseArrays
 
 # Include common functions
 include("../common/functions.jl")
@@ -11,14 +12,14 @@ include("../utilities/eos.jl")
 
 const MMI = MLJModelInterface
 
-export EOSDetector
+export EOSWrapper
 
 # ==============================================================================
-# EOSDetector Model Definition
+# EOSWrapper Model Definition
 # ==============================================================================
 
 """
-    EOSDetector{M,S}
+    EOSWrapper{M,S}
 
 Entropic Outlier Sparsification (EOS) wrapper for MLJ models.
 
@@ -40,7 +41,7 @@ using MLJ, EntropicLearning
 Tree = @load DecisionTreeClassifier pkg=DecisionTree
 
 # Create EOS-wrapped model
-eos_model = EOSDetector(Tree(), α=1.0)
+eos_model = EOSWrapper(Tree(), α=1.0)
 
 # Train as usual
 mach = machine(eos_model, X, y) |> fit!
@@ -56,13 +57,13 @@ outlier_scores = transform(mach, Xnew)
 Horenko, I. (2022). "Cheap robust learning of data anomalies with analytically
 solvable entropic outlier sparsification." PNAS 119(9), e2119659119.
 """
-mutable struct EOSDetector{M,S} <: MMI.Model{S}
+mutable struct EOSWrapper{M,S} <: MMI.Model{S}
     model::M
     α::Float64
     tol::Float64
     max_iter::Int
 
-    function EOSDetector(model::M; α=1.0, tol=1e-6, max_iter=100) where M
+    function EOSWrapper(model::M; α=1.0, tol=1e-6, max_iter=100) where M
         α > 0 || error("α must be positive")
         tol > 0 || error("tol must be positive")
         max_iter > 0 || error("max_iter must be positive")
@@ -74,14 +75,14 @@ mutable struct EOSDetector{M,S} <: MMI.Model{S}
 end
 
 # MLJ model traits
-MMI.is_wrapper(::Type{<:EOSDetector}) = true
-MMI.supports_weights(::Type{<:EOSDetector{M,S}}) where {M,S} = MMI.supports_weights(M)
-MMI.package_name(::Type{<:EOSDetector}) = "EntropicLearning"
-MMI.load_path(::Type{<:EOSDetector}) = "EntropicLearning.EOS.EOSDetector"
+MMI.is_wrapper(::Type{<:EOSWrapper}) = true
+MMI.supports_weights(::Type{<:EOSWrapper{M,S}}) where {M,S} = MMI.supports_weights(M)
+MMI.package_name(::Type{<:EOSWrapper}) = "EntropicLearning"
+MMI.load_path(::Type{<:EOSWrapper}) = "EntropicLearning.EOS.EOSWrapper"
 
 # Input/output scitypes - inherit from wrapped model
-MMI.input_scitype(::Type{<:EOSDetector{M,S}}) where {M,S} = MMI.input_scitype(M)
-MMI.target_scitype(::Type{<:EOSDetector{M,MMI.Supervised}}) where M = MMI.target_scitype(M)
+MMI.input_scitype(::Type{<:EOSWrapper{M,S}}) where {M,S} = MMI.input_scitype(M)
+MMI.target_scitype(::Type{<:EOSWrapper{M,MMI.Supervised}}) where M = MMI.target_scitype(M)
 
 # ==============================================================================
 # Fit Result Structure
@@ -99,17 +100,17 @@ end
 # ==============================================================================
 
 # Unsupervised case
-function MMI.fit(eos::EOSDetector{M,MMI.Unsupervised}, verbosity::Int, X) where M
+function MMI.fit(eos::EOSWrapper{M,MMI.Unsupervised}, verbosity::Int, X) where M
     return _eos_fit(eos, verbosity, X, nothing)
 end
 
 # Supervised case
-function MMI.fit(eos::EOSDetector{M,MMI.Supervised}, verbosity::Int, X, y) where M
+function MMI.fit(eos::EOSWrapper{M,MMI.Supervised}, verbosity::Int, X, y) where M
     return _eos_fit(eos, verbosity, X, y)
 end
 
 # Common implementation
-function _eos_fit(eos::EOSDetector{M,S}, verbosity::Int, X, y) where {M,S}
+function _eos_fit(eos::EOSWrapper{M,S}, verbosity::Int, X, y) where {M,S}
     # Check that wrapped model supports weights
     if !MMI.supports_weights(M)
         error("Wrapped model type $M must support sample weights. " *
@@ -117,10 +118,8 @@ function _eos_fit(eos::EOSDetector{M,S}, verbosity::Int, X, y) where {M,S}
     end
 
     # Check that model supports EOS
-    if !supports_eos(M)
-        error("Model type $M must implement eos_distances to be EOS-compatible. " *
-              "See documentation for implementing eos_distances($M, fitresult, X, [y])")
-    end
+    # This will be automatically checked when eos_distances is called
+    # and will provide a helpful error message
 
     n = MMI.nrows(X)
 
@@ -191,14 +190,14 @@ end
 # ==============================================================================
 
 # Transform always returns outlier scores (for both supervised and unsupervised)
-function MMI.transform(eos::EOSDetector, fitresult::EOSFitResult, Xnew)
+function MMI.transform(eos::EOSWrapper, fitresult::EOSFitResult, Xnew)
     distances = eos_distances(eos.model, fitresult.inner_fitresult, Xnew, nothing)
     weights = eos_weights(distances, fitresult.α)
     return 1 .- weights  # Convert to outlier scores
 end
 
 # For supervised models, also provide predict
-function MMI.predict(eos::EOSDetector{M,MMI.Supervised}, fitresult::EOSFitResult, Xnew) where M
+function MMI.predict(eos::EOSWrapper{M,MMI.Supervised}, fitresult::EOSFitResult, Xnew) where M
     # Pass through to wrapped model
     return MMI.predict(eos.model, fitresult.inner_fitresult, Xnew)
 end
@@ -207,7 +206,7 @@ end
 # Fitted Parameters
 # ==============================================================================
 
-function MMI.fitted_params(eos::EOSDetector, fitresult::EOSFitResult)
+function MMI.fitted_params(eos::EOSWrapper, fitresult::EOSFitResult)
     return (
         α = fitresult.α,
         final_weights = fitresult.final_weights,

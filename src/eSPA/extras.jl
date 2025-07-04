@@ -371,3 +371,26 @@ function get_eps(D::Ti, Deff::Tr; normalise::Bool=true) where {Tr<:Real,Ti<:Inte
 
     return exp(GAMMA) * (s^(-1 / ALPHA) - 1)^(-1 / BETA)
 end
+
+# ==============================================================================
+# Implementation of EOS distances for eSPAClassifier
+# ==============================================================================
+
+function EntropicLearning.eos_distances(::eSPAClassifier, fitresult, X, y=nothing)
+    # Extract the model parameters from the fitresult
+    C = fitresult.C
+    W = fitresult.W
+    G = fitresult.G # TODO: Either need to add this to the fitresult also pass the report
+    # Pre-compute C × Γ
+    CG = C * G
+    # Calculate the discretisation error (per sample)
+    disc_error = zeros(eltype(X), size(X, 2))  # Assumes X is a D×T matrix. TODO: Ensure this is the case
+    @inbounds for t in axes(X, 2)
+        temp = zero(eltype(X))  # Cache current value for sum
+        @simd for d in axes(X, 1)
+            temp += W[d] * (X[d, t] - CG[d, t])^2
+        end
+        disc_error[t] = temp # Store result back to disc_error
+    end
+    return disc_error
+end

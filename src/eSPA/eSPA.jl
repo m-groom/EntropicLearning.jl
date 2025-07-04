@@ -11,6 +11,7 @@ using TimerOutputs
 using NearestNeighbors: KDTree, knn, inrange, Chebyshev
 using SpecialFunctions: digamma
 using Statistics: mean, std
+import ..EntropicLearning
 
 # Include common functions
 include("../common/functions.jl")

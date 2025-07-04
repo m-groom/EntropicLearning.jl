@@ -8,19 +8,18 @@ using SparseArrays
 include("common/functions.jl")
 
 # Include EOS utility functions
+using MLJModelInterface
 include("utilities/eos.jl")
-export calculate_eos_weights, eos_outlier_scores
+export eos_weights, eos_distances, calculate_eos_weights, eos_outlier_scores
 
 include("eSPA/eSPA.jl")
 using .eSPA
 export eSPAClassifier
 
-# Include EOS wrapper model
-include("EOS/EOS.jl")
-using .EOS
-export EOSDetector
-
-using MLJModelInterface
+# # Include EOS wrapper model
+# include("EOS/EOS.jl")
+# using .EOS
+# export EOSWrapper
 
 # Common package metadata
 const PKG_METADATA = (
@@ -37,10 +36,10 @@ MLJModelInterface.metadata_pkg.(
     is_wrapper=false,
 )
 
-MLJModelInterface.metadata_pkg(
-    EOSDetector;
-    PKG_METADATA...,
-    is_wrapper=true,  # EOS is a wrapper model
-)
+# MLJModelInterface.metadata_pkg(
+#     EOSWrapper;
+#     PKG_METADATA...,
+#     is_wrapper=true,  # EOS is a wrapper model
+# )
 
 end # module EntropicLearning
