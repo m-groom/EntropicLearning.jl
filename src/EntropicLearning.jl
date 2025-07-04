@@ -9,6 +9,7 @@ include("common/functions.jl")
 
 # Include EOS utility functions
 using MLJModelInterface
+using Roots
 include("utilities/eos.jl")
 export eos_weights, eos_distances, calculate_eos_weights, eos_outlier_scores
 

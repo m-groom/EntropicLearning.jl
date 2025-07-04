@@ -149,71 +149,75 @@ function eos_outlier_scores(model, fitresult, X, alpha::Real; y=nothing)
 end
 
 """
-    eos_weights(distances, target_Deff, alpha_range; <kwargs>)
+    eos_weights(distances, alpha_range, target_Deff; <kwargs>)
 
-Calculate EOS weights by searching for an `alpha` that yields a specific `target_Deff`.
+Calculate EOS weights by searching for an `alpha` that yields  a target effective
+dimension `target_Deff`.
 
-This method finds the `alpha` within `alpha_range` that produces `eos_weights` matching
-the `target_Deff` (effective dimension). It uses a root-finding algorithm to solve
-for `alpha`.
-
-NOTE: This function requires the `Roots.jl` package.
+This method finds the `alpha` within `alpha_range` that produces `eos_weights` with
+the desired `target_Deff` (effective dimension). It uses an efficient, allocation-free
+root-finding algorithm to solve for `alpha`.
 
 # Arguments
 - `distances::AbstractVector{<:Real}`: Vector of sample distances/losses.
-- `target_Deff::Real`: The target effective dimension.
-- `alpha_range::Tuple{<:Real, <:Real}`: The search range for `alpha`.
+- `alpha_range::Tuple{<:Real,<:Real}`: The search range for `alpha`.
+- `target_Deff::Real=0.5`: The target effective dimension.
 
 # Keyword Arguments
-- `normalise::Bool=false`: Whether `target_Deff` is normalised.
-- `root_finder_method=Roots.Chandrapatla()`: The root-finding method from `Roots.jl`.
+- `normalise::Bool=true`: Whether `target_Deff` is normalised (i.e., a value between
+  `1/length(distances)` and 1).
 
 # Returns
 - `(weights, alpha)`: A tuple containing the calculated `weights` and the found `alpha`.
 """
 function eos_weights(
     distances::AbstractVector{<:Real},
-    target_Deff::Real,
-    alpha_range::Tuple{<:Real,<:Real};
-    normalise::Bool=false,
-    root_finder_method=Roots.Chandrapatla(),
+    alpha_range::Tuple{<:Real,<:Real},
+    target_Deff::Real=0.5;
+    normalise::Bool=true,
 )
+    # Pre-allocate a weights vector to be reused inside the objective function.
+    # This is more efficient as it avoids allocations on each iteration of the root-finder.
+    Tf = float(eltype(distances))
+    weights = zeros(Tf, length(distances))
+
     # Objective function: find alpha where current_Deff - target_Deff is zero
     function objective(alpha::T) where {T<:Real}
-        # Use the original eos_weights function to get weights for a given alpha
-        weights = eos_weights(distances, alpha)
+        # Use update_weights! to modify the pre-allocated vector in-place
+        update_weights!(weights, distances, alpha)
         current_Deff = effective_dimension(weights; normalise=normalise)
         return current_Deff - target_Deff
     end
 
     # Find the alpha that solves the objective function
-    found_alpha = Roots.find_zero(objective, alpha_range, root_finder_method)
+    found_alpha = Roots.find_zero(objective, alpha_range, Roots.Chandrapatla())
+
+    # TODO: Add a check to ensure the root finding method has converged.
 
     # Return the final weights and the alpha that produced them
-    return eos_weights(distances, found_alpha), found_alpha
+    return eos_weights(distances, found_alpha), found_alpha # TODO: should we just return the weights?
 end
 
 """
-    calculate_eos_weights(model, fitresult, X, target_Deff, alpha_range; y=nothing, <kwargs>)
+    calculate_eos_weights(model, fitresult, X, alpha_range, target_Deff; <kwargs>)
 
-Calculate EOS weights for a model by searching for an `alpha` that yields a `target_Deff`.
+Calculate EOS weights for a model by searching for an `alpha` that yields a target effective
+dimension `target_Deff`.
 
 This convenience wrapper first computes `distances` using the provided model, then calls
 the corresponding `eos_weights` method to find the `alpha` that matches the `target_Deff`.
-
-NOTE: This function requires the `Roots.jl` package.
 
 # Arguments
 - `model`: A fitted MLJ model that implements `eos_distances`.
 - `fitresult`: The result from fitting the model.
 - `X`: Input data.
-- `target_Deff::Real`: The target effective dimension.
-- `alpha_range::Tuple{<:Real, <:Real}`: The search range for `alpha`.
-- `y=nothing`: Target data (for supervised models).
+- `alpha_range::Tuple{<:Real,<:Real}`: The search range for `alpha`.
+- `target_Deff::Real=0.5`: The target effective dimension for the weights.
 
 # Keyword Arguments
-- `normalise::Bool=false`: Whether `target_Deff` is normalised.
-- `root_finder_method=Roots.Chandrapatla()`: The root-finding method from `Roots.jl`.
+- `y=nothing`: Target data (for supervised models).
+- `kwargs...`: Additional keyword arguments forwarded to `eos_weights` (e.g., `normalise`).
+  See `?eos_weights` for details.
 
 # Returns
 - `(weights, alpha)`: A tuple with the calculated `weights` and the found `alpha`.
@@ -222,11 +226,10 @@ function calculate_eos_weights(
     model,
     fitresult,
     X,
-    target_Deff::Real,
-    alpha_range::Tuple{<:Real,<:Real};
+    alpha_range::Tuple{<:Real,<:Real},
+    target_Deff::Real=0.5;
     y=nothing,
-    normalise::Bool=false,
-    root_finder_method=Roots.Chandrapatla(),
+    kwargs...,
 )
     distances = if MMI.is_supervised(model)
         eos_distances(model, fitresult, X, y)
@@ -236,9 +239,57 @@ function calculate_eos_weights(
 
     return eos_weights(
         distances,
-        target_Deff,
-        alpha_range;
-        normalise=normalise,
-        root_finder_method=root_finder_method,
+        alpha_range,
+        target_Deff;
+        kwargs...,
     )
+end
+
+"""
+    eos_outlier_scores(model, fitresult, X, alpha_range, target_Deff; <kwargs>)
+
+Calculate EOS outlier scores by searching for an `alpha` that yields a target effective
+dimension `target_Deff`.
+
+This method finds the `alpha` that produces EOS weights with a specific effective
+dimension, and then computes the corresponding outlier scores (`1 .- weight`). It serves as a
+convenience wrapper around `calculate_eos_weights`.
+
+# Arguments
+- `model`: A fitted MLJ model that implements `eos_distances`.
+- `fitresult`: The result from fitting the model.
+- `X`: Input data.
+- `alpha_range::Tuple{<:Real,<:Real}`: The search range for `alpha`.
+- `target_Deff::Real=0.5`: The target effective dimension for the *weights*.
+
+# Keyword Arguments
+- `y=nothing`: Target data (for supervised models).
+- `kwargs...`: Additional keyword arguments forwarded to `eos_weights` (e.g., `normalise`).
+  See `?eos_weights` for details.
+
+# Returns
+- `(scores, alpha)`: A tuple with the calculated outlier scores and the found `alpha`.
+"""
+function eos_outlier_scores(
+    model,
+    fitresult,
+    X,
+    alpha_range::Tuple{<:Real,<:Real},
+    target_Deff::Real=0.5;
+    y=nothing,
+    kwargs...,
+)
+    # Find the appropriate weights and alpha by calling the corresponding eos_weights function.
+    weights, found_alpha = calculate_eos_weights(
+        model,
+        fitresult,
+        X,
+        alpha_range,
+        target_Deff;
+        y=y,
+        kwargs...,
+    )
+
+    # Calculate outlier scores and return with the found alpha.
+    return 1 .- weights, found_alpha # TODO: should we just return the weights?
 end
