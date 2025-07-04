@@ -1,7 +1,6 @@
 module Transformers
 
 using MLJModelInterface
-using MLJBase: table
 using Tables
 using Statistics
 
@@ -101,9 +100,7 @@ function MMI.transform(transformer::MinMaxScaler, fitresult, X)
         push!(scaled_columns, scaled_col_vector)
     end
 
-    named_tuple_data = NamedTuple{Tuple(col_names)}(Tuple(scaled_columns))
-    output_table = table(named_tuple_data)
-    return output_table
+    return NamedTuple{Tuple(col_names)}(Tuple(scaled_columns))
 end
 
 # inverse_transform method: reverses the scaling
@@ -149,9 +146,7 @@ function MMI.inverse_transform(transformer::MinMaxScaler, fitresult, Xscaled)
         push!(restored_columns, restored_col_vector)
     end
 
-    named_tuple_data = NamedTuple{Tuple(col_names)}(Tuple(restored_columns))
-    output_table = table(named_tuple_data)
-    return output_table
+    return NamedTuple{Tuple(col_names)}(Tuple(restored_columns))
 end
 
 # Fitted parameters
@@ -313,9 +308,7 @@ function MMI.transform(transformer::QuantileTransformer, fitresult, Xnew)
         )
     end
 
-    named_tuple_data = NamedTuple{Tuple(Symbol.(output_col_names))}(Tuple(transformed_cols))
-    output_table = table(named_tuple_data)
-    return output_table
+    return NamedTuple{Tuple(Symbol.(output_col_names))}(Tuple(transformed_cols))
 end
 
 function MMI.inverse_transform(transformer::QuantileTransformer, fitresult, Xtransformed)
@@ -404,9 +397,7 @@ function MMI.inverse_transform(transformer::QuantileTransformer, fitresult, Xtra
         )
     end
 
-    named_tuple_data = NamedTuple{Tuple(Symbol.(output_col_names))}(Tuple(original_cols))
-    output_table = table(named_tuple_data)
-    return output_table
+    return NamedTuple{Tuple(Symbol.(output_col_names))}(Tuple(original_cols))
 end
 
 # Fitted parameters

@@ -432,4 +432,79 @@ include("../src/common/functions.jl")
             @test_throws ArgumentError softmax!(w_err, b_err; prefactor=0.0)
         end
     end
+
+    @testset "effective_dimension Tests" begin
+        # Test uniform distribution
+        @testset "uniform distribution" begin
+            W_uniform = [0.25, 0.25, 0.25, 0.25]
+            # Effective dimension should be 4 for uniform distribution
+            @test effective_dimension(W_uniform) ≈ 4.0 atol = 1e-10
+            @test effective_dimension(W_uniform; normalise=true) ≈ 1.0 atol = 1e-10
+
+            # Test with different uniform distributions
+            W_uniform_2 = fill(1 / 3, 3)
+            @test effective_dimension(W_uniform_2) ≈ 3.0 atol = 1e-10
+            @test effective_dimension(W_uniform_2; normalise=true) ≈ 1.0 atol = 1e-10
+        end
+
+        @testset "concentrated distribution" begin
+            # All weight on one element
+            W_concentrated = [1.0, 0.0, 0.0, 0.0]
+            # Effective dimension should be 1 (exp(0) = 1)
+            @test effective_dimension(W_concentrated) ≈ 1.0 atol = 1e-10
+            @test effective_dimension(W_concentrated; normalise=true) ≈ 0.25 atol = 1e-10
+
+            # Nearly concentrated
+            W_nearly = [0.99, 0.01, 0.0, 0.0]
+            eff_dim = effective_dimension(W_nearly)
+            @test eff_dim > 1.0  # Should be > 1 but << 4
+            @test eff_dim < 2.0
+            @test effective_dimension(W_nearly; normalise=true) ≈ eff_dim / 4 atol = 1e-10
+        end
+
+        @testset "edge cases" begin
+            # Empty vector
+            W_empty = Float64[]
+            @test effective_dimension(W_empty) == 0.0
+            @test effective_dimension(W_empty; normalise=true) == 0.0
+
+            # Single element
+            W_single = [1.0]
+            @test effective_dimension(W_single) == 1.0
+            @test effective_dimension(W_single; normalise=true) == 1.0
+
+            # Single element with zero (edge case)
+            W_single_zero = [0.0]
+            # Should use safelog, so entropy is 0 * log(smallest) = 0
+            @test effective_dimension(W_single_zero) == 1.0
+            @test effective_dimension(W_single_zero; normalise=true) == 1.0
+        end
+
+        @testset "known analytical cases" begin
+            # Binary distribution with equal probabilities
+            W_binary = [0.5, 0.5]
+            expected_eff = exp(log(2))  # Should be 2
+            @test effective_dimension(W_binary) ≈ expected_eff atol = 1e-10
+            @test effective_dimension(W_binary; normalise=true) ≈ 1.0 atol = 1e-10
+
+            # Binary distribution with unequal probabilities
+            p = 0.3
+            W_binary_unequal = [p, 1 - p]
+            expected_entropy = -(p * log(p) + (1 - p) * log(1 - p))
+            expected_eff = exp(expected_entropy)
+            @test effective_dimension(W_binary_unequal) ≈ expected_eff atol = 1e-10
+            @test effective_dimension(W_binary_unequal; normalise=true) ≈ expected_eff / 2 atol =
+                1e-10
+        end
+
+        @testset "monotonicity properties" begin
+            # More uniform distributions should have higher effective dimension
+            W_more_uniform = [0.3, 0.3, 0.2, 0.2]
+            W_less_uniform = [0.7, 0.1, 0.1, 0.1]
+
+            @test effective_dimension(W_more_uniform) > effective_dimension(W_less_uniform)
+            @test effective_dimension(W_more_uniform; normalise=true) >
+                effective_dimension(W_less_uniform; normalise=true)
+        end
+    end
 end

@@ -7,14 +7,16 @@ function initialise(
     y::AbstractVector{Ti},
     D_features::Int,
     T_instances::Int,
-    M_classes::Int;
-    rng::AbstractRNG=Random.default_rng(),
+    M_classes::Int,
 ) where {Tf<:AbstractFloat,Ti<:Integer}
     # Get number of clusters
     K_clusters = model.K
     @assert K_clusters <= T_instances (
         "Number of clusters must be less than or equal to the number of instances"
     )
+
+    # Initialise the random number generator
+    rng = get_rng(model.random_state)
 
     # Initialise the feature importance vector
     W = zeros(Tf, D_features)
@@ -42,7 +44,7 @@ function initialise(
             initseeds!(iseeds, KmppAlg(), X, SqEuclidean(); rng=rng)
         end
     else    # Randomly select K data points as centroids
-        iseeds = StatsBase.sample(rng, 1:T_instances, K_clusters; replace=false)
+        iseeds = sample(rng, 1:T_instances, K_clusters; replace=false)
     end
     copyseeds!(C, X, iseeds)
 
@@ -107,9 +109,9 @@ end
 
 # Find any empty clusters
 function find_empty(G::SparseMatrixCSC{Bool,Int})
-    sumG = sum(G; dims=2)       # Number of instances in each cluster
-    notEmpty = sumG .> eps()    # Find any empty boxes
-    K_new = sum(notEmpty)       # Number of non-empty boxes
+    sumG = sum(G; dims=2)           # Number of instances in each cluster
+    notEmpty = vec(sumG .> eps())   # Find any empty boxes
+    K_new = sum(notEmpty)           # Number of non-empty boxes
     return notEmpty, K_new
 end
 
@@ -239,15 +241,19 @@ end
 
 # Prediction function
 function predict_proba(
-    model::eSPAClassifier, fitresult::eSPAFitResult, X::AbstractMatrix{Tf}
+    model::eSPAClassifier,
+    C::AbstractMatrix{Tf},
+    W::AbstractVector{Tf},
+    L::AbstractMatrix{Tf},
+    X::AbstractMatrix{Tf},
 ) where {Tf<:AbstractFloat}
     # Get dimensions
     T_instances = size(X, 2)
-    K_clusters = size(fitresult.C, 2)
-    M_classes = size(fitresult.L, 1)
+    K_clusters = size(C, 2)
+    M_classes = size(L, 1)
 
     # Initialise the random number generator
-    rng = _get_rng(model.random_state)
+    rng = get_rng(model.random_state)
 
     # Initialise Γ and Π
     G = sparse(
@@ -260,17 +266,17 @@ function predict_proba(
     P = Matrix{Tf}(undef, M_classes, T_instances)
 
     # Update Γ
-    update_G!(G, X, P, fitresult.C, fitresult.W, fitresult.L, Tf(0.0))
+    update_G!(G, X, P, C, W, L, Tf(0.0))
 
     # Update Π
-    update_P!(P, fitresult.L, G)
+    update_P!(P, L, G)
 
     if model.iterative_pred
-        iterative_predict!(P, G, model, X, fitresult.C, fitresult.W, fitresult.L)
+        iterative_predict!(P, G, model, X, C, W, L)
     end
 
-    # Return Π (TODO: also return Γ and store it in the report)
-    return P
+    # Return Π
+    return P, G
 end
 
 # Iterative prediction function

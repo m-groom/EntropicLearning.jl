@@ -543,3 +543,57 @@ function softmax(b::AbstractVector{Tf}; prefactor::Tf=Tf(1.0)) where {Tf<:Abstra
     softmax!(W, copy(b); prefactor=prefactor)
     return W
 end
+
+"""
+    effective_dimension(W::AbstractVector{Tf}; normalise::Bool=false) where {Tf<:AbstractFloat}
+
+Computes the effective dimension of a probability vector `W`. Note: the function does not
+check for validity of the input vector.
+
+The effective dimension is defined as the exponential of the Shannon entropy:
+Deff = exp(H(W)) = exp(-∑ᵢ Wᵢ log(Wᵢ))
+
+This measure quantifies how "spread out" a probability distribution is. For a uniform
+distribution over `n` elements, the effective dimension equals `n`. For distributions
+concentrated on fewer elements, the effective dimension is smaller than the vector length.
+
+When `normalise=true`, the effective dimension is divided by the length of `W`,
+yielding a value between 0 and 1 that represents the fraction of dimensions that
+are "active" in the distribution.
+
+# Arguments
+- `W::AbstractVector{Tf}`: A probability vector containing `Real` numbers. The elements
+  should ideally sum to 1 for a proper probability distribution, though the function
+  will compute the effective dimension regardless.
+
+# Keyword Arguments
+- `normalise::Bool`: If `true`, the effective dimension is normalized by dividing by
+  `length(W)`. Defaults to `false`.
+
+# Returns
+- `Tf`: The effective dimension of `W`. If `normalise=false`, this is `exp(entropy(W))`.
+  If `normalise=true`, this is `exp(entropy(W)) / length(W)`.
+
+# See Also
+- [`entropy`](@ref): The Shannon entropy function used in the computation.
+"""
+function effective_dimension(
+    W::AbstractVector{Tf}; normalise::Bool=false
+) where {Tf<:AbstractFloat}
+    # Handle empty vector case
+    if isempty(W)
+        return zero(Tf)
+    elseif length(W) == 1
+        return one(Tf)
+    end
+
+    # Compute effective dimension
+    Deff = exp(entropy(W))
+
+    # Apply normalisation if requested
+    if normalise
+        Deff /= length(W)
+    end
+
+    return Deff
+end

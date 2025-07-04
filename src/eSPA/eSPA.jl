@@ -46,16 +46,15 @@ include("extras.jl")
 
 # MLJ Interface
 function MMI.fit(model::eSPAClassifier, verbosity::Int, X, y)
-    # Initialise the random number generator and timer
-    rng = _get_rng(model.random_state)
+    # Initialise the timer
     to = TimerOutput()
 
     # TODO: write a data front-end
     X_mat = MMI.matrix(X; transpose=true)
     D_features, T_instances = size(X_mat)
-    classes = MMI.classes(y[1])
+    classes = MMI.classes(y[1]) # classes_seen = MMI.decoder(classes)(unique(y_int))
     M_classes = length(classes)
-    y_int = MMI.int(y)
+    y_int = MMI.int(y)  # TODO: pass y_int using data front-end
 
     # TODO: make this a function
     Tf = eltype(X_mat)
@@ -68,9 +67,7 @@ function MMI.fit(model::eSPAClassifier, verbosity::Int, X, y)
 
     # --- Initialization ---
     @timeit to "Initialisation" begin
-        C, W, L, G = initialise(
-            model, X_mat, y_int, D_features, T_instances, M_classes; rng=rng
-        )
+        C, W, L, G = initialise(model, X_mat, y_int, D_features, T_instances, M_classes)
         K_current = size(C, 2)                  # Current number of clusters
         loss = fill(Tf(Inf), model.max_iter + 1)    # Loss for each iteration
         iter = 0                                # Iteration counter
@@ -141,10 +138,14 @@ function MMI.fit(model::eSPAClassifier, verbosity::Int, X, y)
         end
     end
 
+    # Estimate the effective number of parameters
+    Deff = effective_dimension(W)
+    n_params = Deff * (K_current + 1) + (M_classes - 1) * K_current
+
     # --- Return fitresult, cache and report ---
     fitresult = eSPAFitResult(C, W, L, classes)
     cache = nothing
-    report = (iterations=iter, loss=loss[1:(iter + 1)], timings=to, G=G)
+    report = (iterations=iter, loss=loss[1:(iter + 1)], timings=to, G=G, n_params=n_params)
 
     return (fitresult, cache, report)
 end
@@ -154,14 +155,10 @@ function MMI.predict(model::eSPAClassifier, fitresult::eSPAFitResult, Xnew)
     # TODO: write a data front-end
     X_mat = MMI.matrix(Xnew; transpose=true)
 
-    Pi_new = predict_proba(model, fitresult, X_mat)
-    probabilities = collect(Pi_new')
+    Pi_new, G_new = predict_proba(model, fitresult.C, fitresult.W, fitresult.L, X_mat)  # TODO: store G_new in the report
+    probabilities = Pi_new'
 
-    if size(probabilities, 1) == 0 || size(probabilities, 2) == 0
-        return MMI.UnivariateFinite[]
-    else
-        return MMI.UnivariateFinite(fitresult.classes, probabilities)
-    end
+    return MMI.UnivariateFinite(fitresult.classes, probabilities)
 end
 
 function MMI.fitted_params(::eSPAClassifier, fitresult::eSPAFitResult)
