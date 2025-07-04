@@ -1,116 +1,8 @@
-# # TODO: use a more advanced root-finding method
-# # TODO: use upper and lower bounds from the "waterfall plot"
-# function ess_calibrate(losses; ρ = 0.8, atol = 1e-10, maxiter = 60)
+# Utility functions for Entropic Outlier Sparsification (EOS)
+# This file contains standalone functions for computing EOS weights
+# without the full iterative fitting procedure
 
-#     ℓ = collect(losses)          # ensure we can index - TODO: unnecessary, just use losses
-#     T = length(ℓ)
-#     ess_target = ρ * T
-
-#     # if all equal no weighting is possible nor needed - TODO: add tolerance to this check
-#     iszero(std(losses)) && return (Inf, fill(1/T, T))
-
-#     # Similarly, if ess_target = T, then all weights are 1/T
-#     (ρ >= 1) && return (Inf, fill(1/T, T))
-#     @assert 0 < ρ < 1 "ρ must be between 0 and 1"
-
-#     # helper: weights via log-sum-exp to avoid under-/overflow
-#     weights(α) = begin
-#         logw = @. -(ℓ) / α
-#         m    = maximum(logw)              # log-sum-exp shift
-#         w    = @. exp(logw - m)
-#         w ./= sum(w)                      # normalise
-#     end
-
-#     ess(α) = begin
-#         w = weights(α)
-#         1 / sum(abs2, w)                  # ESS = 1/∑w²
-#     end
-
-#     # --- bracket a solution --------------------------------------------------
-#     α_low  = eps(eltype(ℓ))                      # ESS → 1 here
-#     α_high = maximum(ℓ) - minimum(ℓ) + eps()     # ESS ≈ T here - not guaranteed!
-
-#     # TODO: dynamically adjust bounds
-#     # --- bisection on a *log* scale (monotone ESS) ---------------------------
-#     for _ in 1:maxiter
-#         α_mid = √(α_low * α_high)                # geometric mean
-#         ess_mid = ess(α_mid)
-
-#         # stop if close enough (or numeric saturation)
-#         if !isnan(ess_mid) && abs(ess_mid - ess_target) < atol
-#             return α_mid, weights(α_mid)
-#         end
-
-#         if isnan(ess_mid) || ess_mid < ess_target
-#             α_low = α_mid    # need *larger* α to raise ESS
-#         else
-#             α_high = α_mid   # need *smaller* α
-#         end
-#     end
-
-#     α_hat = √(α_low * α_high)                     # fall-back
-#     return α_hat, weights(α_hat)
-# end
-
-
-module EOS
-
-using MLJModelInterface
-using LinearAlgebra: dot
-using Statistics: mean
-
-const MMI = MLJModelInterface
-
-export EOS, eos_weights, eos_outlier_scores, calculate_eos_weights, eos_distances, supports_eos
-
-# ==============================================================================
-# EOS Model Definition
-# ==============================================================================
-
-"""
-    EOS{M,S}
-
-Entropic Outlier Sparsification (EOS) wrapper for MLJ models.
-
-This meta-algorithm wraps any MLJ model that supports sample weights and provides
-outlier detection capabilities through entropic regularization of sample weights.
-
-# Parameters
-- `model::M`: The wrapped MLJ model (must support sample weights)
-- `α::Float64`: Entropic regularization parameter (>0). Larger values lead to more uniform weights.
-- `tol::Float64`: Convergence tolerance for the iterative algorithm
-- `max_iter::Int`: Maximum number of iterations
-
-# References
-Horenko, I. (2022). "Cheap robust learning of data anomalies with analytically 
-solvable entropic outlier sparsification." PNAS 119(9), e2119659119.
-"""
-mutable struct EOS{M,S} <: MMI.Model{S}
-    model::M
-    α::Float64
-    tol::Float64
-    max_iter::Int
-    
-    function EOS(model::M; α=1.0, tol=1e-6, max_iter=100) where M
-        α > 0 || error("α must be positive")
-        tol > 0 || error("tol must be positive")
-        max_iter > 0 || error("max_iter must be positive")
-        
-        # Determine if wrapped model is supervised or unsupervised
-        S = MMI.is_supervised(M) ? MMI.Supervised() : MMI.Unsupervised()
-        return new{M,typeof(S)}(model, α, tol, max_iter)
-    end
-end
-
-# MLJ model traits
-MMI.is_wrapper(::Type{<:EOS}) = true
-MMI.supports_weights(::Type{<:EOS{M,S}}) where {M,S} = MMI.supports_weights(M)
-MMI.package_name(::Type{<:EOS}) = "EntropicLearning"
-MMI.load_path(::Type{<:EOS}) = "EntropicLearning.EOS.EOS"
-
-# Input/output scitypes - inherit from wrapped model
-MMI.input_scitype(::Type{<:EOS{M,S}}) where {M,S} = MMI.input_scitype(M)
-MMI.target_scitype(::Type{<:EOS{M,MMI.Supervised}}) where M = MMI.target_scitype(M)
+export eos_weights, eos_outlier_scores, calculate_eos_weights, eos_distances, supports_eos
 
 # ==============================================================================
 # Distance Function Protocol
@@ -123,20 +15,62 @@ Compute distances/losses for each sample in X using the fitted model.
 
 This function must be implemented for any model to be EOS-compatible.
 For supervised models, y may be provided for computing supervised losses.
+
+# Arguments
+- `model`: The MLJ model instance
+- `fitresult`: The result from fitting the model
+- `X`: Input data
+- `y`: Target data (optional, for supervised models)
+
+# Returns
+- Vector of distances/losses, one per sample
+
+# Example Implementation
+```julia
+# For a classifier using cross-entropy loss
+function EntropicLearning.eos_distances(model::MyClassifier, fitresult, X, y=nothing)
+    if isnothing(y)
+        # For transform: use entropy of predicted probabilities
+        probs = predict(model, fitresult, X)
+        return -[sum(p .* log.(p .+ eps()) for p in probs]
+    else
+        # For fit: use cross-entropy loss
+        probs = predict(model, fitresult, X)
+        # ... compute cross-entropy with y
+    end
+end
+```
 """
 function eos_distances end
 
 # Default error message
 eos_distances(model, args...) = 
-    error("Model type $(typeof(model)) must implement eos_distances to be EOS-compatible")
+    error("Model type $(typeof(model)) must implement eos_distances to be EOS-compatible. " *
+          "See ?eos_distances for details.")
 
 """
     supports_eos(::Type{ModelType})
 
 Check if a model type supports EOS by implementing the required interface.
+
+This function automatically returns `true` if `eos_distances` is implemented
+for the given model type.
 """
-supports_eos(::Type) = false
-# supports_eos(::Type{<:eSPA}) = true  # Uncomment when eSPA implements eos_distances
+function supports_eos(::Type{M}) where M
+    # Check if there's a method for eos_distances with this model type
+    # We check for methods with 3 or 4 arguments (X, or X and y)
+    method_exists = false
+    
+    # Check for eos_distances(model::M, fitresult, X)
+    sig3 = Tuple{typeof(eos_distances), M, Any, Any}
+    method_exists |= !isempty(methods(eos_distances, sig3))
+    
+    # Check for eos_distances(model::M, fitresult, X, y)  
+    sig4 = Tuple{typeof(eos_distances), M, Any, Any, Any}
+    method_exists |= !isempty(methods(eos_distances, sig4))
+    
+    return method_exists
+end
 
 # ==============================================================================
 # Core EOS Functions
@@ -145,7 +79,22 @@ supports_eos(::Type) = false
 """
     eos_weights(distances, α)
 
-Calculate EOS weights from distances using the closed-form solution.
+Calculate EOS weights from distances using the closed-form solution from
+Theorem in Horenko (2022).
+
+# Arguments
+- `distances`: Vector of distances/losses for each sample
+- `α`: Entropic regularization parameter (>0)
+
+# Returns
+- Vector of weights in [0,1] that sum to 1
+
+# Details
+The weights are computed as:
+```
+wᵢ = exp(-dᵢ/α) / Σⱼ exp(-dⱼ/α)
+```
+
 Uses log-sum-exp trick for numerical stability.
 """
 function eos_weights(distances::AbstractVector{<:Real}, α::Real)
@@ -172,9 +121,41 @@ end
 """
     calculate_eos_weights(model, fitresult, X, α; y=nothing)
 
-Calculate EOS weights for data X using a fitted model (mode 2: single-step).
+Calculate EOS weights for data X using a fitted model.
+
+This is the main utility function for mode 2 (single-step weight calculation).
+
+# Arguments
+- `model`: A fitted MLJ model that implements `eos_distances`
+- `fitresult`: The result from fitting the model
+- `X`: Input data to calculate weights for
+- `α`: Entropic regularization parameter
+- `y`: Target data (optional, for supervised losses)
+
+# Returns
+- Vector of weights in [0,1]
+
+# Example
+```julia
+# Fit any MLJ model
+mach = machine(SomeModel(), X, y) |> fit!
+
+# Calculate EOS weights for the training data
+weights = calculate_eos_weights(
+    mach.model, 
+    mach.fitresult, 
+    X, 
+    1.0;  # α parameter
+    y=y
+)
+```
 """
 function calculate_eos_weights(model, fitresult, X, α::Real; y=nothing)
+    if !supports_eos(typeof(model))
+        error("Model type $(typeof(model)) must implement eos_distances. " *
+              "See ?eos_distances for implementation details.")
+    end
+    
     distances = eos_distances(model, fitresult, X, y)
     return eos_weights(distances, α)
 end
@@ -183,161 +164,20 @@ end
     eos_outlier_scores(model, fitresult, X, α; y=nothing)
 
 Calculate outlier scores (1 - weight) for data X using a fitted model.
+
 Higher scores indicate more outlying samples.
+
+# Arguments
+- `model`: A fitted MLJ model that implements `eos_distances`
+- `fitresult`: The result from fitting the model  
+- `X`: Input data to score
+- `α`: Entropic regularization parameter
+- `y`: Target data (optional)
+
+# Returns
+- Vector of outlier scores in [0,1]
 """
 function eos_outlier_scores(model, fitresult, X, α::Real; y=nothing)
     weights = calculate_eos_weights(model, fitresult, X, α; y=y)
     return 1 .- weights
 end
-
-# ==============================================================================
-# Fit Result Structure
-# ==============================================================================
-
-struct EOSFitResult{F,T}
-    inner_fitresult::F
-    final_weights::Vector{T}
-    α::T
-    n_iter::Int
-end
-
-# ==============================================================================
-# Fit Methods
-# ==============================================================================
-
-# Unsupervised case
-function MMI.fit(eos::EOS{M,MMI.Unsupervised}, verbosity::Int, X) where M
-    return _eos_fit(eos, verbosity, X, nothing)
-end
-
-# Supervised case
-function MMI.fit(eos::EOS{M,MMI.Supervised}, verbosity::Int, X, y) where M
-    return _eos_fit(eos, verbosity, X, y)
-end
-
-# Common implementation
-function _eos_fit(eos::EOS{M,S}, verbosity::Int, X, y) where {M,S}
-    # Check that wrapped model supports weights
-    if !MMI.supports_weights(M)
-        error("Wrapped model type $M must support sample weights. " *
-              "Check MLJModelInterface.supports_weights($M)")
-    end
-    
-    # Check that model supports EOS
-    if !supports_eos(M)
-        error("Model type $M must implement eos_distances to be EOS-compatible. " *
-              "See documentation for details.")
-    end
-    
-    n = MMI.nrows(X)
-    
-    # Initialize uniform weights
-    weights = fill(1/n, n)
-    
-    # Storage for convergence tracking
-    losses = Float64[]
-    inner_fitresult = nothing
-    
-    verbosity > 0 && @info "Starting EOS iterations with α=$(eos.α)"
-    
-    for iter in 1:eos.max_iter
-        # θ-step: Fit model with current weights
-        fit_args = isnothing(y) ? (X,) : (X, y)
-        inner_fitresult, _, _ = MMI.fit(eos.model, verbosity-1, fit_args...; 
-                                        weights=weights)
-        
-        # Get distances from fitted model
-        distances = eos_distances(eos.model, inner_fitresult, X, y)
-        
-        # w-step: Update weights using closed-form solution
-        new_weights = eos_weights(distances, eos.α)
-        
-        # Compute objective function for convergence check
-        entropy_term = -sum(w * log(w + eps()) for w in new_weights)
-        objective = dot(new_weights, distances) - eos.α * entropy_term
-        push!(losses, objective)
-        
-        # Check convergence
-        if iter > 1 && abs(losses[iter] - losses[iter-1]) < eos.tol
-            verbosity > 0 && @info "EOS converged after $iter iterations"
-            weights = new_weights
-            break
-        end
-        
-        weights = new_weights
-        
-        if verbosity > 1
-            @info "EOS iteration $iter: objective = $(losses[iter])"
-        end
-    end
-    
-    if length(losses) == eos.max_iter && verbosity > 0
-        @warn "EOS reached maximum iterations without converging"
-    end
-    
-    fitresult = EOSFitResult(
-        inner_fitresult,
-        weights,
-        eos.α,
-        length(losses)
-    )
-    
-    report = (
-        iterations = length(losses),
-        convergence_history = losses,
-        final_weights = weights
-    )
-    
-    cache = nothing
-    
-    return fitresult, cache, report
-end
-
-# ==============================================================================
-# Transform and Predict Methods
-# ==============================================================================
-
-# Transform always returns outlier scores (for both supervised and unsupervised)
-function MMI.transform(eos::EOS, fitresult::EOSFitResult, Xnew)
-    distances = eos_distances(eos.model, fitresult.inner_fitresult, Xnew, nothing)
-    weights = eos_weights(distances, fitresult.α)
-    return 1 .- weights  # Convert to outlier scores
-end
-
-# For supervised models, also provide predict
-function MMI.predict(eos::EOS{M,MMI.Supervised}, fitresult::EOSFitResult, Xnew) where M
-    # Pass through to wrapped model
-    return MMI.predict(eos.model, fitresult.inner_fitresult, Xnew)
-end
-
-# ==============================================================================
-# Fitted Parameters
-# ==============================================================================
-
-function MMI.fitted_params(eos::EOS, fitresult::EOSFitResult)
-    return (
-        α = fitresult.α,
-        final_weights = fitresult.final_weights,
-        n_iter = fitresult.n_iter,
-        inner_fitted_params = MMI.fitted_params(eos.model, fitresult.inner_fitresult)
-    )
-end
-
-# ==============================================================================
-# OutlierDetectionInterface Support
-# ==============================================================================
-
-# Check if OutlierDetectionInterface is available
-const _ODI_AVAILABLE = try
-    @eval using OutlierDetectionInterface
-    true
-catch
-    false
-end
-
-if _ODI_AVAILABLE
-    # All EOS models are outlier detectors
-    OutlierDetectionInterface.is_outlier_detector(::Type{<:EOS}) = true
-end
-
-end # module EOS
