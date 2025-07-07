@@ -166,6 +166,8 @@ root-finding algorithm to solve for `alpha`.
 # Keyword Arguments
 - `normalise::Bool=true`: Whether `target_Deff` is normalised (i.e., a value between
   `1/length(distances)` and 1).
+- `atol::Real=1e-6`: Absolute tolerance for convergence checking (|objective(found_alpha)| < atol).
+- `kwargs...`: Additional keyword arguments passed to `Roots.find_zero` (e.g., `maxiters`, `xatol`, `xrtol`).
 
 # Returns
 - `(weights, alpha)`: A tuple containing the calculated `weights` and the found `alpha`.
@@ -175,6 +177,8 @@ function eos_weights(
     alpha_range::Tuple{<:Real,<:Real},
     target_Deff::Real=0.5;
     normalise::Bool=true,
+    atol::Real=1e-6,
+    kwargs...,
 )
     # Pre-allocate a weights vector to be reused inside the objective function.
     # This is more efficient as it avoids allocations on each iteration of the root-finder.
@@ -192,12 +196,17 @@ function eos_weights(
     end
 
     # Find the alpha that solves the objective function
-    found_alpha = Roots.find_zero(objective, alpha_range, Roots.Chandrapatla())
+    found_alpha = Roots.find_zero(objective, alpha_range, Roots.Chandrapatla(); atol=atol, kwargs...)
 
-    # TODO: Add a check to ensure the root finding method has converged.
+    # Check convergence
+    final_residual = abs(objective(found_alpha))
+    if final_residual > atol
+        error("Root finding failed to converge. Final residual: $final_residual > $atol. " *
+              "Try increasing maxiters or relaxing atol.")
+    end
 
     # Return the final weights and the alpha that produced them
-    return eos_weights(distances, found_alpha), found_alpha # TODO: should we just return the weights?
+    return (weights=eos_weights(distances, found_alpha), alpha=found_alpha)
 end
 
 """
@@ -218,7 +227,7 @@ the corresponding `eos_weights` method to find the `alpha` that matches the `tar
 
 # Keyword Arguments
 - `y=nothing`: Target data (for supervised models).
-- `kwargs...`: Additional keyword arguments forwarded to `eos_weights` (e.g., `normalise`).
+- `kwargs...`: Additional keyword arguments forwarded to `eos_weights` (e.g., `normalise`, `atol`, `maxiters`).
   See `?eos_weights` for details.
 
 # Returns
@@ -266,7 +275,7 @@ convenience wrapper around `calculate_eos_weights`.
 
 # Keyword Arguments
 - `y=nothing`: Target data (for supervised models).
-- `kwargs...`: Additional keyword arguments forwarded to `eos_weights` (e.g., `normalise`).
+- `kwargs...`: Additional keyword arguments forwarded to `eos_weights` (e.g., `normalise`, `atol`, `maxiters`).
   See `?eos_weights` for details.
 
 # Returns
@@ -282,7 +291,7 @@ function eos_outlier_scores(
     kwargs...,
 )
     # Find the appropriate weights and alpha by calling the corresponding eos_weights function.
-    weights, found_alpha = calculate_eos_weights(
+    result = calculate_eos_weights(
         model,
         fitresult,
         X,
@@ -293,5 +302,5 @@ function eos_outlier_scores(
     )
 
     # Calculate outlier scores and return with the found alpha.
-    return 1 .- weights, found_alpha # TODO: should we just return the weights?
+    return (scores=1 .- result.weights, alpha=result.alpha)
 end
