@@ -155,8 +155,7 @@ Calculate EOS weights by searching for an `alpha` that yields  a target effectiv
 dimension `target_Deff`.
 
 This method finds the `alpha` within `alpha_range` that produces `eos_weights` with
-the desired `target_Deff` (effective dimension). It uses an efficient, allocation-free
-root-finding algorithm to solve for `alpha`.
+the desired `target_Deff` (effective dimension).
 
 # Arguments
 - `distances::AbstractVector{<:Real}`: Vector of sample distances/losses.
@@ -180,16 +179,16 @@ function eos_weights(
     atol::Real=1e-6,
     kwargs...,
 )
+    # Validate alpha_range
+    alpha_range[1] > 0 && alpha_range[2] > 0 || error("alpha_range must contain positive values")
+    @assert alpha_range[1] < alpha_range[2] "alpha_range must be a valid range (first value must be less than second)"
+
     # Pre-allocate a weights vector to be reused inside the objective function.
-    # This is more efficient as it avoids allocations on each iteration of the root-finder.
     Tf = float(eltype(distances))
     weights = zeros(Tf, length(distances))
 
-    # TODO: should the search be in log space?
-
     # Objective function: find alpha where current_Deff - target_Deff is zero
     function objective(alpha::T) where {T<:Real}
-        # Use update_weights! to modify the pre-allocated vector in-place
         update_weights!(weights, distances, alpha)
         current_Deff = effective_dimension(weights; normalise=normalise)
         return current_Deff - target_Deff
@@ -302,5 +301,5 @@ function eos_outlier_scores(
     )
 
     # Calculate outlier scores and return with the found alpha.
-    return (scores=1 .- result.weights, alpha=result.alpha)
+    return (scores=(1 .- result.weights), alpha=result.alpha)
 end
