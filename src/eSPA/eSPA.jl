@@ -21,14 +21,14 @@ export eSPAClassifier
 
 MMI.@mlj_model mutable struct eSPAClassifier <: MMI.Probabilistic
     K::Int = 3::(_ > 0)
-    epsC::Float64 = 1e-3::(_ >= 0)
-    epsW::Float64 = 1e-1::(_ > 0)
+    epsC::Float64 = 1e-2::(0.0 <= _ < Inf)
+    epsW::Float64 = 1e-1::(_ > 0.0)
     kpp_init::Bool = true::(_ in (true, false))
     mi_init::Bool = true::(_ in (true, false))
     iterative_pred::Bool = false::(_ in (true, false))
     unbias::Bool = false::(_ in (true, false))
     max_iter::Int = 200::(_ > 0)
-    tol::Float64 = 1e-8::(_ > 0)
+    tol::Float64 = 1e-8::(_ > 0.0)
     random_state::Union{AbstractRNG,Integer} = Random.default_rng()
 end
 
@@ -223,7 +223,7 @@ Train the machine with `fit!(mach, rows=...)`.
 
 - `K::Int = 3`: Initial number of clusters to find.
 
-- `epsC::Float64 = 1e-3`: Regularisation parameter for the classification term in the loss
+- `epsC::Float64 = 1e-2`: Regularisation parameter for the classification term in the loss
   function.
 
 - `epsW::Float64 = 1e-1`: Regularisation parameter for the entropy of the feature weights.
