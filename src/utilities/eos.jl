@@ -181,6 +181,8 @@ function eos_weights(
     Tf = float(eltype(distances))
     weights = zeros(Tf, length(distances))
 
+    # TODO: should the search be in log space?
+
     # Objective function: find alpha where current_Deff - target_Deff is zero
     function objective(alpha::T) where {T<:Real}
         # Use update_weights! to modify the pre-allocated vector in-place
