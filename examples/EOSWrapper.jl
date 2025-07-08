@@ -6,10 +6,7 @@ using MLJGLMInterface
 
 # Implementation of eos_distancesfor LinearRegressor from MLJGLMInterface
 function EntropicLearning.eos_distances(
-    model::MLJGLMInterface.LinearRegressor,
-    fitresult,
-    X,
-    y=nothing
+    model::MLJGLMInterface.LinearRegressor, fitresult, X, y=nothing
 )
     # Convert X to matrix
     Xmat = MLJ.matrix(X)
@@ -29,24 +26,27 @@ function EntropicLearning.eos_distances(
     if isnothing(y)
         # For transform: use squared distance from prediction to mean of predictions
         ŷ_mean = mean(ŷ)
-        distances = (ŷ .- ŷ_mean).^2
+        distances = (ŷ .- ŷ_mean) .^ 2
     else
         # For fit: use squared residuals
         y_vec = vec(y)  # Ensure y is a vector
-        distances = (y_vec .- ŷ).^2
+        distances = (y_vec .- ŷ) .^ 2
     end
 
     return distances
 end
 
 # Generate synthetic regression data with outliers
-X, y = make_regression(200, 5;               # 200 samples, 5 features
-                       noise=0.5,             # Moderate noise
-                       sparse=0.0,            # All features are informative
-                       outliers=0.1,          # 10% outliers
-                       rng=123)               # For reproducibility
+X, y = make_regression(
+    200,
+    5;               # 200 samples, 5 features
+    noise=0.5,             # Moderate noise
+    sparse=0.0,            # All features are informative
+    outliers=0.1,          # 10% outliers
+    rng=123,
+)               # For reproducibility
 
 # Wrap the model in an EOSWrapper
 lr_model = LinearRegressor()
-eos_model = EOSWrapper(model=lr_model, alpha=0.1)
-mach = machine(eos_model, X, y) |> fit!
+eos_model = EOSWrapper(; model=lr_model, alpha=0.1)
+mach = fit!(machine(eos_model, X, y))

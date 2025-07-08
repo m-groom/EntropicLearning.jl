@@ -183,7 +183,8 @@ function eos_weights(
     kwargs...,
 )
     # Validate alpha_range
-    alpha_range[1] > 0 && alpha_range[2] > 0 || error("alpha_range must contain positive values")
+    alpha_range[1] > 0 && alpha_range[2] > 0 ||
+        error("alpha_range must contain positive values")
     @assert alpha_range[1] < alpha_range[2] "alpha_range must be a valid range (first value must be less than second)"
 
     # Pre-allocate a weights vector to be reused inside the objective function.
@@ -198,13 +199,17 @@ function eos_weights(
     end
 
     # Find the alpha that solves the objective function
-    found_alpha = Roots.find_zero(objective, alpha_range, Roots.Chandrapatla(); atol=atol, kwargs...)
+    found_alpha = Roots.find_zero(
+        objective, alpha_range, Roots.Chandrapatla(); atol=atol, kwargs...
+    )
 
     # Check convergence
     final_residual = abs(objective(found_alpha))
     if final_residual > atol
-        error("Root finding failed to converge. Final residual: $final_residual > $atol. " *
-              "Try increasing maxiters or relaxing atol.")
+        error(
+            "Root finding failed to converge. Final residual: $final_residual > $atol. " *
+            "Try increasing maxiters or relaxing atol.",
+        )
     end
 
     # Return the final weights and the alpha that produced them
@@ -250,12 +255,7 @@ function calculate_eos_weights(
         eos_distances(model, fitresult, X)
     end
 
-    return eos_weights(
-        distances,
-        alpha_range,
-        target_Deff;
-        kwargs...,
-    )
+    return eos_weights(distances, alpha_range, target_Deff; kwargs...)
 end
 
 """
@@ -294,13 +294,7 @@ function eos_outlier_scores(
 )
     # Find the appropriate weights and alpha by calling the corresponding eos_weights function.
     result = calculate_eos_weights(
-        model,
-        fitresult,
-        X,
-        alpha_range,
-        target_Deff;
-        y=y,
-        kwargs...,
+        model, fitresult, X, alpha_range, target_Deff; y=y, kwargs...
     )
     weights = result.weights
     scores = 1.0 .- (weights .- minimum(weights)) ./ (maximum(weights) - minimum(weights))

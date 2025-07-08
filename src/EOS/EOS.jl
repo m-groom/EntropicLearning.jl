@@ -81,38 +81,46 @@ outlier_scores = transform(mach, Xnew)
 Horenko, I. (2022). "Cheap robust learning of data anomalies with analytically
 solvable entropic outlier sparsification." PNAS 119(9), e2119659119.
 """
-const EOSWrapper{M} = Union{DeterministicEOSWrapper{M}, ProbabilisticEOSWrapper{M}, UnsupervisedEOSWrapper{M}} where M
+const EOSWrapper{M} = Union{
+    DeterministicEOSWrapper{M},ProbabilisticEOSWrapper{M},UnsupervisedEOSWrapper{M}
+} where {M}
 Base.parentmodule(::Type{<:EOSWrapper}) = EOS
 
 # External keyword constructor
 function EOSWrapper(
-    args...;
-    model=nothing,
-    alpha::Real=1.0,
-    tol::Real=1e-6,
-    max_iter::Integer=100
+    args...; model=nothing, alpha::Real=1.0, tol::Real=1e-6, max_iter::Integer=100
 )
     length(args) < 2 || throw(ArgumentError("Too many positional arguments"))
 
     if length(args) === 1
         atom = first(args)
         model === nothing ||
-            @warn "Using `model=$atom`. Ignoring specification "*
-            "`model=$model`. "
+            @warn "Using `model=$atom`. Ignoring specification " * "`model=$model`. "
     else
-        model === nothing && throw(ArgumentError("model parameter is required for EOSWrapper"))
+        model === nothing &&
+            throw(ArgumentError("model parameter is required for EOSWrapper"))
         atom = model
     end
 
     # Create appropriate wrapper type based on wrapped model type
     if atom isa MMI.Deterministic
-        wrapper = DeterministicEOSWrapper{typeof(atom)}(atom, Float64(alpha), Float64(tol), max_iter)
+        wrapper = DeterministicEOSWrapper{typeof(atom)}(
+            atom, Float64(alpha), Float64(tol), max_iter
+        )
     elseif atom isa MMI.Probabilistic
-        wrapper = ProbabilisticEOSWrapper{typeof(atom)}(atom, Float64(alpha), Float64(tol), max_iter)
+        wrapper = ProbabilisticEOSWrapper{typeof(atom)}(
+            atom, Float64(alpha), Float64(tol), max_iter
+        )
     elseif atom isa MMI.Unsupervised
-        wrapper = UnsupervisedEOSWrapper{typeof(atom)}(atom, Float64(alpha), Float64(tol), max_iter)
+        wrapper = UnsupervisedEOSWrapper{typeof(atom)}(
+            atom, Float64(alpha), Float64(tol), max_iter
+        )
     else
-        throw(ArgumentError("$(typeof(atom)) does not appear to be a supported MLJ model type"))
+        throw(
+            ArgumentError(
+                "$(typeof(atom)) does not appear to be a supported MLJ model type"
+            ),
+        )
     end
 
     message = MMI.clean!(wrapper)
@@ -147,7 +155,9 @@ MMI.metadata_model(
     human_name="Entropic Outlier Sparsification",
     load_path="EntropicLearning.EOS.EOSWrapper",
 )
-MMI.reports_feature_importances(::Type{<:EOSWrapper{M}}) where {M} = MMI.reports_feature_importances(M)
+function MMI.reports_feature_importances(::Type{<:EOSWrapper{M}}) where {M}
+    MMI.reports_feature_importances(M)
+end
 MMI.is_pure_julia(::Type{<:EOSWrapper{M}}) where {M} = MMI.is_pure_julia(M)
 
 # Input/output scitypes - inherit from wrapped model
@@ -219,24 +229,30 @@ function _fit(eos::EOSWrapper, verbosity::Int, X, y)
         for iter in 1:eos.max_iter
             iterations += 1
             # θ-step: Fit model with current weights - TODO: use update if it is available
-            @timeit to "inner_fit" inner_fitresult, inner_cache, inner_report = MMI.fit(eos.model, verbosity - 1, fit_args...)
+            @timeit to "inner_fit" inner_fitresult, inner_cache, inner_report = MMI.fit(
+                eos.model, verbosity - 1, fit_args...
+            )
 
             # Get distances from fitted model using reformatted data - TODO: use mutating version if it is available
-            @timeit to "distances" distances .= EntropicLearning.eos_distances(eos.model, inner_fitresult, args...)
+            @timeit to "distances" distances .= EntropicLearning.eos_distances(
+                eos.model, inner_fitresult, args...
+            )
 
             # w-step: Update weights using closed-form solution
             @timeit to "update_weights" update_weights!(weights, distances, eos.alpha)
 
             # Compute objective function for convergence check
-            @timeit to "loss" loss[iter] = dot(weights, distances) - eos.alpha * entropy(weights)
+            @timeit to "loss" loss[iter] =
+                dot(weights, distances) - eos.alpha * entropy(weights)
 
             # Check if loss function has increased
-            if iter > 1 && loss[iter] - loss[iter-1] > eps(Tf)
-                verbosity > 0 && @warn "Loss function has increased at iteration $iter by $(loss[iter] - loss[iter-1])"
+            if iter > 1 && loss[iter] - loss[iter - 1] > eps(Tf)
+                verbosity > 0 &&
+                    @warn "Loss function has increased at iteration $iter by $(loss[iter] - loss[iter-1])"
             end
 
             # Check convergence
-            if iter > 1 && abs((loss[iter] - loss[iter-1]) / loss[iter]) <= eos.tol
+            if iter > 1 && abs((loss[iter] - loss[iter - 1]) / loss[iter]) <= eos.tol
                 break
             end
         end
@@ -249,11 +265,11 @@ function _fit(eos::EOSWrapper, verbosity::Int, X, y)
     # --- Return fitresult, cache and report ---
     fitresult = EOSFitResult(inner_fitresult, weights)
     report = (
-        iterations = iterations,
-        loss = loss[1:iterations],
+        iterations=iterations,
+        loss=loss[1:iterations],
         timings=to,
-        ESS = effective_dimension(weights),
-        inner_report = inner_report,
+        ESS=effective_dimension(weights),
+        inner_report=inner_report,
     )
     cache = inner_cache
 
@@ -268,11 +284,17 @@ end
 function MMI.transform(eos::EOSWrapper, fitresult::EOSFitResult, Xnew)
     # Reformat new data for the wrapped model
     args = MMI.reformat(eos.model, Xnew)
-    return EntropicLearning.eos_outlier_scores(eos.model, fitresult.inner_fitresult, eos.alpha, args...)
+    return EntropicLearning.eos_outlier_scores(
+        eos.model, fitresult.inner_fitresult, eos.alpha, args...
+    )
 end
 
 # For supervised models only
-function MMI.predict(eos::Union{DeterministicEOSWrapper, ProbabilisticEOSWrapper}, fitresult::EOSFitResult, Xnew)
+function MMI.predict(
+    eos::Union{DeterministicEOSWrapper,ProbabilisticEOSWrapper},
+    fitresult::EOSFitResult,
+    Xnew,
+)
     # Reformat new data for the wrapped model and pass through
     args = MMI.reformat(eos.model, Xnew)
     return MMI.predict(eos.model, fitresult.inner_fitresult, args...)
@@ -284,9 +306,9 @@ end
 
 function MMI.fitted_params(eos::EOSWrapper, fitresult::EOSFitResult)
     return (
-        alpha = fitresult.alpha,
-        weights = fitresult.weights,
-        inner_fitted_params = MMI.fitted_params(eos.model, fitresult.inner_fitresult)
+        alpha=fitresult.alpha,
+        weights=fitresult.weights,
+        inner_fitted_params=MMI.fitted_params(eos.model, fitresult.inner_fitresult),
     )
 end
 
