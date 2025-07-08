@@ -14,9 +14,9 @@ using Clustering.Distances: SqEuclidean, WeightedSqEuclidean
 # Access eSPA module
 import EntropicLearning.eSPA as eSPA
 
-# Include the core and extras module functions
-include("../src/eSPA/core.jl")
-include("../src/eSPA/extras.jl")
+# # Include the core and extras module functions
+# include("../src/eSPA/core.jl")
+# include("../src/eSPA/extras.jl")
 
 @testset "extras" begin
     @testset "mi_continuous_discrete function tests" begin
@@ -32,13 +32,9 @@ include("../src/eSPA/extras.jl")
             # Reshape x to matrix format (1 feature, n samples)
             X = reshape(x, 1, n)
 
-            mi_est = mi_continuous_discrete(
+            mi_est = eSPA.mi_continuous_discrete(
                 X, y_int; n_neighbors=3, rng=Random.MersenneTwister(42)
             )
-
-            # println("Test 1 - Step threshold:")
-            # println("Estimated MI: $(mi_est[1])")
-            # println("Expected MI: $(log(2))")
 
             @test isapprox(mi_est[1], log(2), atol=0.05)
         end
@@ -53,13 +49,9 @@ include("../src/eSPA/extras.jl")
             # Reshape x to matrix format
             X = reshape(x, 1, n)
 
-            mi_est = mi_continuous_discrete(
+            mi_est = eSPA.mi_continuous_discrete(
                 X, y; n_neighbors=3, rng=Random.MersenneTwister(123)
             )
-
-            # println("Test 2 - Four level quantizer:")
-            # println("Estimated MI: $(mi_est[1])")
-            # println("Expected MI: $(log(4))")
 
             @test isapprox(mi_est[1], log(4), atol=0.05)
         end
@@ -74,13 +66,9 @@ include("../src/eSPA/extras.jl")
             # Reshape x to matrix format
             X = reshape(x, 1, n)
 
-            mi_est = mi_continuous_discrete(
+            mi_est = eSPA.mi_continuous_discrete(
                 X, y; n_neighbors=3, rng=Random.MersenneTwister(2024)
             )
-
-            # println("Test 3 - Independent variables:")
-            # println("Estimated MI: $(mi_est[1])")
-            # println("Expected MI: ≈ 0")
 
             # Independence ⇒ MI ≈ 0 (allow tiny positive bias)
             @test mi_est[1] < 0.02
@@ -96,13 +84,9 @@ include("../src/eSPA/extras.jl")
             # Reshape x to matrix format
             X = reshape(x, 1, n)
 
-            mi_est = mi_continuous_discrete(
+            mi_est = eSPA.mi_continuous_discrete(
                 X, y; n_neighbors=3, rng=Random.MersenneTwister(7)
             )
-
-            # println("Test 4 - Constant label:")
-            # println("Estimated MI: $(mi_est[1])")
-            # println("Expected MI: 0.0")
 
             @test mi_est[1] == 0.0
         end
@@ -115,11 +99,7 @@ include("../src/eSPA/extras.jl")
             y3 = [0]
             c3 = [0.5]
             # n_neighbors would be min(1, 1-1)=0, but internally k is at least 1 if count > 1
-            mi3 = compute_mi_cd(c3, y3, 1)
-
-            # println("Test - Single sample:")
-            # println("Estimated MI: $(mi3)")
-            # println("Expected MI: 0.0 (only one unique label)")
+            mi3 = eSPA.compute_mi_cd(c3, y3, 1)
 
             @test mi3 == 0.0 # Should be 0 as only one unique label
         end
@@ -128,11 +108,7 @@ include("../src/eSPA/extras.jl")
         @testset "two samples different labels MI" begin
             y4 = [0, 1]
             c4 = [0.1, 1.0]
-            mi4 = compute_mi_cd(c4, y4, 3)
-
-            # println("Test - Two samples, different labels:")
-            # println("Estimated MI: $(mi4)")
-            # println("Expected MI: 0.0 (each label has count=1, filtered out)")
+            mi4 = eSPA.compute_mi_cd(c4, y4, 3)
 
             # Should be 0 since each label has only 1 sample (count=1, filtered out)
             @test mi4 == 0.0
@@ -142,11 +118,7 @@ include("../src/eSPA/extras.jl")
         @testset "perfect binary separation MI" begin
             y5 = [0, 0, 0, 0, 0, 1, 1, 1, 1, 1]
             c5 = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
-            mi5 = compute_mi_cd(c5, y5, 3)
-
-            # println("Test - Perfect binary separation:")
-            # println("Estimated MI: $(mi5)")
-            # println("Expected MI: > 0.3 (high MI for clear separation)")
+            mi5 = eSPA.compute_mi_cd(c5, y5, 3)
 
             @test mi5 > 0.3 # Should be reasonably high for clear separation
         end
@@ -155,11 +127,7 @@ include("../src/eSPA/extras.jl")
         @testset "three classes MI" begin
             y6 = [0, 0, 0, 1, 1, 1, 2, 2, 2]
             c6 = [0.1, 0.2, 0.3, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
-            mi6 = compute_mi_cd(c6, y6, 2)
-
-            # println("Test - Three classes:")
-            # println("Estimated MI: $(mi6)")
-            # println("Expected MI: > 0.5 (high MI for three separated classes)")
+            mi6 = eSPA.compute_mi_cd(c6, y6, 2)
 
             @test mi6 > 0.5 # Should be high for three well-separated classes
         end
@@ -168,13 +136,8 @@ include("../src/eSPA/extras.jl")
         @testset "different n_neighbors MI" begin
             y7 = [0, 0, 0, 0, 1, 1, 1, 1]
             c7 = [0.1, 0.2, 0.3, 0.4, 0.7, 0.8, 0.9, 1.0]
-            mi7_k1 = compute_mi_cd(c7, y7, 1)
-            mi7_k2 = compute_mi_cd(c7, y7, 2)
-
-            # println("Test - Different n_neighbors:")
-            # println("MI with k=1: $(mi7_k1)")
-            # println("MI with k=2: $(mi7_k2)")
-            # println("Expected: Both > 0, may differ slightly")
+            mi7_k1 = eSPA.compute_mi_cd(c7, y7, 1)
+            mi7_k2 = eSPA.compute_mi_cd(c7, y7, 2)
 
             @test mi7_k1 > 0.0
             @test mi7_k2 > 0.0
@@ -185,11 +148,7 @@ include("../src/eSPA/extras.jl")
         @testset "unbalanced labels MI" begin
             y8 = [0, 0, 1] # 2 samples for label 0, 1 sample for label 1
             c8 = [0.1, 0.2, 1.0]
-            mi8 = compute_mi_cd(c8, y8, 2)
-
-            # println("Test - Unbalanced labels:")
-            # println("Estimated MI: $(mi8)")
-            # println("Expected MI: 0.0 (label 1 has only 1 sample, gets filtered)")
+            mi8 = eSPA.compute_mi_cd(c8, y8, 2)
 
             # Label 1 has count=1, gets filtered out, only 2 samples from label 0 remain
             @test mi8 == 0.0
@@ -206,11 +165,7 @@ include("../src/eSPA/extras.jl")
             X_t4 = ones(Float64, 1, 20) # All values are the same
             y_t4 = y_t1 # Use a varying y
             rng_t4 = Random.MersenneTwister(42)
-            mi_t4 = mi_continuous_discrete(X_t4, y_t4; n_neighbors=3, rng=rng_t4)
-
-            # println("Test - Zero std feature:")
-            # println("Estimated MI: $(mi_t4[1])")
-            # println("Expected MI: < 0.01 (low MI due to noise)")
+            mi_t4 = eSPA.mi_continuous_discrete(X_t4, y_t4; n_neighbors=3, rng=rng_t4)
 
             # After adding noise, the std will not be zero.
             @test mi_t4[1] < 0.01 # Expect low MI
@@ -232,14 +187,9 @@ include("../src/eSPA/extras.jl")
             # Feature 3: independent
             X_multi[3, :] = randn(rng, n)
 
-            mi_multi = mi_continuous_discrete(
+            mi_multi = eSPA.mi_continuous_discrete(
                 X_multi, y_multi; n_neighbors=3, rng=Random.MersenneTwister(1)
             )
-
-            # println("Test - Multiple features:")
-            # println("MI feature 1 (high corr): $(mi_multi[1])")
-            # println("MI feature 2 (weak corr): $(mi_multi[2])")
-            # println("MI feature 3 (independent): $(mi_multi[3])")
 
             # Highly correlated should beat weakly correlated
             @test mi_multi[1] > mi_multi[2]
@@ -256,13 +206,9 @@ include("../src/eSPA/extras.jl")
             X_perfect[1, 6:10] .= 1.0
             y_perfect = [0, 0, 0, 0, 0, 1, 1, 1, 1, 1]
 
-            mi_perfect = mi_continuous_discrete(
+            mi_perfect = eSPA.mi_continuous_discrete(
                 X_perfect, y_perfect; n_neighbors=3, rng=Random.MersenneTwister(77)
             )
-
-            # println("Test - Perfect separability:")
-            # println("Estimated MI: $(mi_perfect[1])")
-            # println("Expected MI: > 0.5 (close to log(2) ≈ 0.693)")
 
             # Should be high MI, approaching log(2) for binary perfect separation
             @test mi_perfect[1] > 0.5
@@ -286,13 +232,9 @@ include("../src/eSPA/extras.jl")
             y_three[21:40] .= 1
             y_three[41:60] .= 2
 
-            mi_three = mi_continuous_discrete(
+            mi_three = eSPA.mi_continuous_discrete(
                 X_three, y_three; n_neighbors=3, rng=Random.MersenneTwister(42)
             )
-
-            # println("Test - Three classes:")
-            # println("Estimated MI: $(mi_three[1])")
-            # println("Expected MI: > 0.8 (high MI for three separated classes)")
 
             @test mi_three[1] > 0.8 # Should be high for three well-separated classes
         end
@@ -306,20 +248,15 @@ include("../src/eSPA/extras.jl")
             y_int = Int.(y)
             X = reshape(x, 1, n)
 
-            mi_k1 = mi_continuous_discrete(
+            mi_k1 = eSPA.mi_continuous_discrete(
                 X, y_int; n_neighbors=1, rng=Random.MersenneTwister(1)
             )
-            mi_k3 = mi_continuous_discrete(
+            mi_k3 = eSPA.mi_continuous_discrete(
                 X, y_int; n_neighbors=3, rng=Random.MersenneTwister(1)
             )
-            mi_k5 = mi_continuous_discrete(
+            mi_k5 = eSPA.mi_continuous_discrete(
                 X, y_int; n_neighbors=5, rng=Random.MersenneTwister(1)
             )
-
-            # println("Test - Different n_neighbors (discrete):")
-            # println("MI with k=1: $(mi_k1[1])")
-            # println("MI with k=3: $(mi_k3[1])")
-            # println("MI with k=5: $(mi_k5[1])")
 
             @test mi_k1[1] > 0.5 # All should be reasonably high for this threshold case
             @test mi_k3[1] > 0.5
@@ -336,12 +273,10 @@ include("../src/eSPA/extras.jl")
             # this
             # We expect it to either return empty array or handle the edge case
             try
-                mi_empty = mi_continuous_discrete(
+                mi_empty = eSPA.mi_continuous_discrete(
                     X_empty, y_empty; n_neighbors=3, rng=Random.MersenneTwister(42)
                 )
-                # println("Test - Empty matrix:")
-                # println("MI result: $(mi_empty)")
-                # Should return array of length 1 (for 1 feature)
+
                 @test length(mi_empty) == 1
             catch e
                 println("Test - Empty matrix: Caught expected error: $(typeof(e))")
@@ -354,13 +289,9 @@ include("../src/eSPA/extras.jl")
             X_single = reshape([0.5], 1, 1) # 1 feature, 1 sample
             y_single = [0]
 
-            mi_single = mi_continuous_discrete(
+            mi_single = eSPA.mi_continuous_discrete(
                 X_single, y_single; n_neighbors=3, rng=Random.MersenneTwister(42)
             )
-
-            # println("Test - Single sample discrete:")
-            # println("Estimated MI: $(mi_single[1])")
-            # println("Expected MI: 0.0 (only one unique label)")
 
             @test mi_single[1] == 0.0 # Should be 0 for single sample
         end
@@ -371,14 +302,14 @@ include("../src/eSPA/extras.jl")
             # Test basic properties with normalise=true (default)
             D = 10
             ε = 1.0
-            f = get_eff(D, ε)
+            f = eSPA.get_eff(D, ε)
 
             # Should be between 1/D and 1 when normalised
             @test f >= 1.0 / D
             @test f <= 1.0
 
             # Test with normalise=false
-            f_unnorm = get_eff(D, ε; normalise=false)
+            f_unnorm = eSPA.get_eff(D, ε; normalise=false)
             @test f_unnorm ≈ f * D atol = 1e-10
             @test f_unnorm >= 1.0
             @test f_unnorm <= D
@@ -389,7 +320,7 @@ include("../src/eSPA/extras.jl")
 
             # Should be monotonically increasing with ε
             ε_values = [0.001, 0.01, 0.1, 1.0, 10.0]
-            f_values = [get_eff(D, ε) for ε in ε_values]
+            f_values = [eSPA.get_eff(D, ε) for ε in ε_values]
 
             for i in 2:length(f_values)
                 @test f_values[i] >= f_values[i - 1]
@@ -400,32 +331,32 @@ include("../src/eSPA/extras.jl")
             D = 4
 
             # Very small ε should give values close to 1/D
-            f_small = get_eff(D, 1e-10)
+            f_small = eSPA.get_eff(D, 1e-10)
             @test f_small ≈ 1.0 / D atol = 0.01
 
             # Large ε should give values close to 1
-            f_large = get_eff(D, 1e10)
+            f_large = eSPA.get_eff(D, 1e10)
             @test f_large ≈ 1.0 atol = 0.01
 
             # Test D=1 case
-            f_d1 = get_eff(1, 1.0)
+            f_d1 = eSPA.get_eff(1, 1.0)
             @test f_d1 == 1.0  # Should always be 1 for D=1
         end
 
         @testset "input validation" begin
             # Test assertions
-            @test_throws AssertionError get_eff(0, 1.0)    # D must be >= 1
-            @test_throws AssertionError get_eff(-1, 1.0)   # D must be >= 1
-            @test_throws AssertionError get_eff(5, 0.0)    # ε must be positive
-            @test_throws AssertionError get_eff(5, -1.0)   # ε must be positive
+            @test_throws AssertionError eSPA.get_eff(0, 1.0)    # D must be >= 1
+            @test_throws AssertionError eSPA.get_eff(-1, 1.0)   # D must be >= 1
+            @test_throws AssertionError eSPA.get_eff(5, 0.0)    # ε must be positive
+            @test_throws AssertionError eSPA.get_eff(5, -1.0)   # ε must be positive
         end
 
         @testset "mathematical properties" begin
             ε = 0.02
 
             # Test with different D values - larger D should affect scaling
-            f_d3 = get_eff(3, ε)
-            f_d6 = get_eff(6, ε)
+            f_d3 = eSPA.get_eff(3, ε)
+            f_d6 = eSPA.get_eff(6, ε)
             # Both should be in valid ranges
             @test f_d3 >= 1.0 / 3 && f_d3 <= 1.0
             @test f_d6 >= 1.0 / 6 && f_d6 <= 1.0
@@ -437,14 +368,14 @@ include("../src/eSPA/extras.jl")
             # Test basic properties with normalise=true (default)
             D = 10
             Deff = 0.5  # Normalised effective dimension
-            ε = get_eps(D, Deff)
+            ε = eSPA.get_eps(D, Deff)
 
             @test ε > 0.0
             @test isfinite(ε)
 
             # Test with normalise=false
             Deff_unnorm = 5  # Unnormalised (between 1 and D)
-            ε_unnorm = get_eps(D, Deff_unnorm; normalise=false)
+            ε_unnorm = eSPA.get_eps(D, Deff_unnorm; normalise=false)
             @test ε_unnorm > 0.0
             @test isfinite(ε_unnorm)
         end
@@ -454,38 +385,38 @@ include("../src/eSPA/extras.jl")
 
             # Minimum effective dimension should return very small ε
             Deff_min = 1.0 / D
-            ε_min = get_eps(D, Deff_min)
+            ε_min = eSPA.get_eps(D, Deff_min)
             @test ε_min ≈ eps(Float64) atol = 1e-10
 
             # Maximum effective dimension should return Inf
             Deff_max = 1.0
-            ε_max = get_eps(D, Deff_max)
+            ε_max = eSPA.get_eps(D, Deff_max)
             @test ε_max == Inf
 
             # Just below minimum (should still return eps)
             Deff_below = 1.0 / D - 1e-10
-            ε_below = get_eps(D, Deff_below)
+            ε_below = eSPA.get_eps(D, Deff_below)
             @test ε_below ≈ eps(Float64) atol = 1e-10
 
             # Just above maximum (should still return Inf)
             Deff_above = 1.0 + 1e-10
-            ε_above = get_eps(D, Deff_above)
+            ε_above = eSPA.get_eps(D, Deff_above)
             @test ε_above == Inf
 
             # Test unnormalised edge cases
-            ε_min_unnorm = get_eps(D, 1; normalise=false)
+            ε_min_unnorm = eSPA.get_eps(D, 1; normalise=false)
             @test ε_min_unnorm ≈ eps(Float64) atol = 1e-10
 
-            ε_max_unnorm = get_eps(D, D; normalise=false)
+            ε_max_unnorm = eSPA.get_eps(D, D; normalise=false)
             @test ε_max_unnorm == Inf
         end
 
         @testset "input validation" begin
             # Test assertions
-            @test_throws AssertionError get_eps(0, 0.5)     # D must be >= 1
-            @test_throws AssertionError get_eps(-1, 0.5)    # D must be >= 1
-            @test_throws AssertionError get_eps(5, 0.0)     # Deff must be positive
-            @test_throws AssertionError get_eps(5, -0.1)    # Deff must be positive
+            @test_throws AssertionError eSPA.get_eps(0, 0.5)     # D must be >= 1
+            @test_throws AssertionError eSPA.get_eps(-1, 0.5)    # D must be >= 1
+            @test_throws AssertionError eSPA.get_eps(5, 0.0)     # Deff must be positive
+            @test_throws AssertionError eSPA.get_eps(5, -0.1)    # Deff must be positive
         end
 
         @testset "inverse relationship" begin
@@ -496,13 +427,13 @@ include("../src/eSPA/extras.jl")
             for D in D_values
                 for ε in ε_values
                     # Test normalised case
-                    f = get_eff(D, ε; normalise=true)
-                    ε_recovered = get_eps(D, f; normalise=true)
+                    f = eSPA.get_eff(D, ε; normalise=true)
+                    ε_recovered = eSPA.get_eps(D, f; normalise=true)
                     @test ε ≈ ε_recovered atol = 1e-10 rtol = 1e-8
 
                     # Test unnormalised case
-                    f_unnorm = get_eff(D, ε; normalise=false)
-                    ε_recovered_unnorm = get_eps(D, f_unnorm; normalise=false)
+                    f_unnorm = eSPA.get_eff(D, ε; normalise=false)
+                    ε_recovered_unnorm = eSPA.get_eps(D, f_unnorm; normalise=false)
                     @test ε ≈ ε_recovered_unnorm atol = 1e-10 rtol = 1e-8
                 end
             end
@@ -513,7 +444,7 @@ include("../src/eSPA/extras.jl")
 
             # Should be monotonically increasing with Deff
             Deff_values = [0.3, 0.5, 0.7, 0.9]
-            ε_values = [get_eps(D, Deff) for Deff in Deff_values]
+            ε_values = [eSPA.get_eps(D, Deff) for Deff in Deff_values]
 
             for i in 2:length(ε_values)
                 @test ε_values[i - 1] <= ε_values[i]
@@ -527,8 +458,8 @@ include("../src/eSPA/extras.jl")
             Deff_close_min = 1.0 / D + 1e-15
             Deff_close_max = 1.0 - 1e-15
 
-            ε_close_min = get_eps(D, Deff_close_min)
-            ε_close_max = get_eps(D, Deff_close_max)
+            ε_close_min = eSPA.get_eps(D, Deff_close_min)
+            ε_close_max = eSPA.get_eps(D, Deff_close_max)
 
             @test isfinite(ε_close_min)
             @test ε_close_min > 0

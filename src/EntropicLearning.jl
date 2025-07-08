@@ -13,14 +13,15 @@ using Roots
 include("utilities/eos.jl")
 export eos_weights, eos_distances, calculate_eos_weights, eos_outlier_scores
 
-include("eSPA/eSPA.jl")
-using .eSPA
-export eSPAClassifier
-
 # Include EOS wrapper model
 include("EOS/EOS.jl")
 using .EOS
 export EOSWrapper
+
+# Include eSPA model
+include("eSPA/eSPA.jl")
+using .eSPA
+export eSPAClassifier
 
 # Common package metadata
 const PKG_METADATA = (
