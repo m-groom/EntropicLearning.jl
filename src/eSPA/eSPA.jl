@@ -66,7 +66,7 @@ function MMI.fit(model::eSPAClassifier, verbosity::Int, X, y)
         end
     end
 
-    # --- Initialization ---
+    # --- Initialisation ---
     @timeit to "Initialisation" begin
         C, W, L, G = initialise(model, X_mat, y_int, D_features, T_instances, M_classes)
         K_current = size(C, 2)                  # Current number of clusters

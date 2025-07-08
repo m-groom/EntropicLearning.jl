@@ -49,6 +49,8 @@ function eos_distances(model, args...)
     )
 end
 
+# TODO: add mutating version of eos_distances
+
 # ==============================================================================
 # Core EOS Functions
 # ==============================================================================
@@ -117,8 +119,8 @@ Calculate EOS weights for data X using a fitted model.
 - Vector of weights in [0,1] that sum to 1
 
 """
-function calculate_eos_weights(model, fitresult, X, alpha::Real; y=nothing)
-    distances = if MMI.is_supervised(model)
+function calculate_eos_weights(model, fitresult, alpha::Real, X, y=nothing)
+    distances = if MLJModelInterface.is_supervised(model)
         eos_distances(model, fitresult, X, y)
     else
         eos_distances(model, fitresult, X)
@@ -129,7 +131,8 @@ end
 """
     eos_outlier_scores(model, fitresult, X, alpha; y=nothing)
 
-Calculate outlier scores (1 - weight) for data X using a fitted model.
+Calculate outlier scores (1 - weights) for data X using a fitted model. The weights are
+rescaled so that the minimum weight is 0 and the maximum weight is 1.
 
 Higher scores indicate more outlying samples.
 
@@ -141,11 +144,11 @@ Higher scores indicate more outlying samples.
 - `y`: Target data (optional)
 
 # Returns
-- Vector of outlier scores in [0,1] that sum to 1
+- Vector of outlier scores in [0,1]
 """
-function eos_outlier_scores(model, fitresult, X, alpha::Real; y=nothing)
-    weights = calculate_eos_weights(model, fitresult, X, alpha; y=y)
-    return 1 .- weights
+function eos_outlier_scores(model, fitresult, alpha::Real, X, y=nothing)
+    weights = calculate_eos_weights(model, fitresult, alpha, X, y)
+    return 1.0 .- (weights .- minimum(weights)) ./ (maximum(weights) - minimum(weights))
 end
 
 """
@@ -160,7 +163,7 @@ the desired `target_Deff` (effective dimension).
 # Arguments
 - `distances::AbstractVector{<:Real}`: Vector of sample distances/losses.
 - `alpha_range::Tuple{<:Real,<:Real}`: The search range for `alpha`.
-- `target_Deff::Real=0.5`: The target effective dimension.
+- `target_Deff::Real`: The target effective dimension.
 
 # Keyword Arguments
 - `normalise::Bool=true`: Whether `target_Deff` is normalised (i.e., a value between
@@ -174,7 +177,7 @@ the desired `target_Deff` (effective dimension).
 function eos_weights(
     distances::AbstractVector{<:Real},
     alpha_range::Tuple{<:Real,<:Real},
-    target_Deff::Real=0.5;
+    target_Deff::Real;
     normalise::Bool=true,
     atol::Real=1e-6,
     kwargs...,
@@ -220,12 +223,12 @@ the corresponding `eos_weights` method to find the `alpha` that matches the `tar
 # Arguments
 - `model`: A fitted MLJ model that implements `eos_distances`.
 - `fitresult`: The result from fitting the model.
-- `X`: Input data.
 - `alpha_range::Tuple{<:Real,<:Real}`: The search range for `alpha`.
-- `target_Deff::Real=0.5`: The target effective dimension for the weights.
+- `target_Deff::Real`: The target effective dimension for the weights.
+- `X`: Input data.
+- `y=nothing`: Target data (for supervised models).
 
 # Keyword Arguments
-- `y=nothing`: Target data (for supervised models).
 - `kwargs...`: Additional keyword arguments forwarded to `eos_weights` (e.g., `normalise`, `atol`, `maxiters`).
   See `?eos_weights` for details.
 
@@ -235,13 +238,13 @@ the corresponding `eos_weights` method to find the `alpha` that matches the `tar
 function calculate_eos_weights(
     model,
     fitresult,
-    X,
     alpha_range::Tuple{<:Real,<:Real},
-    target_Deff::Real=0.5;
-    y=nothing,
+    target_Deff::Real,
+    X,
+    y=nothing;
     kwargs...,
 )
-    distances = if MMI.is_supervised(model)
+    distances = if MLJModelInterface.is_supervised(model)
         eos_distances(model, fitresult, X, y)
     else
         eos_distances(model, fitresult, X)
@@ -268,12 +271,12 @@ convenience wrapper around `calculate_eos_weights`.
 # Arguments
 - `model`: A fitted MLJ model that implements `eos_distances`.
 - `fitresult`: The result from fitting the model.
-- `X`: Input data.
 - `alpha_range::Tuple{<:Real,<:Real}`: The search range for `alpha`.
-- `target_Deff::Real=0.5`: The target effective dimension for the *weights*.
+- `target_Deff::Real`: The target effective dimension for the *weights*.
+- `X`: Input data.
+- `y=nothing`: Target data (for supervised models).
 
 # Keyword Arguments
-- `y=nothing`: Target data (for supervised models).
 - `kwargs...`: Additional keyword arguments forwarded to `eos_weights` (e.g., `normalise`, `atol`, `maxiters`).
   See `?eos_weights` for details.
 
@@ -283,10 +286,10 @@ convenience wrapper around `calculate_eos_weights`.
 function eos_outlier_scores(
     model,
     fitresult,
-    X,
     alpha_range::Tuple{<:Real,<:Real},
-    target_Deff::Real=0.5;
-    y=nothing,
+    target_Deff::Real,
+    X,
+    y=nothing;
     kwargs...,
 )
     # Find the appropriate weights and alpha by calling the corresponding eos_weights function.
@@ -299,7 +302,9 @@ function eos_outlier_scores(
         y=y,
         kwargs...,
     )
+    weights = result.weights
+    scores = 1.0 .- (weights .- minimum(weights)) ./ (maximum(weights) - minimum(weights))
 
     # Calculate outlier scores and return with the found alpha.
-    return (scores=(1 .- result.weights), alpha=result.alpha)
+    return (scores=scores, alpha=result.alpha)
 end
