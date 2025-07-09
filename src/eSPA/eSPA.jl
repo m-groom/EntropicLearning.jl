@@ -194,8 +194,8 @@ MMI.supports_weights(::Type{<:eSPAClassifier}) = true
 
 MMI.metadata_model(
     eSPAClassifier;
-    input_scitype=Table(Continuous),
-    target_scitype=AbstractVector{<:Finite},
+    input_scitype=Union{MMI.Table(MMI.Continuous),AbstractMatrix{<:MMI.Continuous}},
+    target_scitype=AbstractVector{<:MMI.Finite},
     human_name="eSPA Classifier",
     load_path="EntropicLearning.eSPA.eSPAClassifier",
 )

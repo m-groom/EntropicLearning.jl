@@ -4,6 +4,10 @@
 _columnnames(X) = collect(_columnnames(X, Val(Tables.columnaccess(X))))
 _columnnames(X, ::Val{true}) = Tables.columnnames(Tables.columns(X))
 _columnnames(X, ::Val{false}) = Tables.columnnames(first(Tables.rows(X)))
+# Column names for matrix input
+function _columnnames(X::AbstractMatrix{Tf}) where Tf <: AbstractFloat
+    return [Symbol("feature_$i") for i in axes(X, 1)]
+end
 
 # Reformat - no weights
 function MMI.reformat(::eSPAClassifier, X, y)

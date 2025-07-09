@@ -136,7 +136,7 @@ function create_test_data(D_features::Int, T_instances::Int)
     y = [argmax(view(P, :, t)) for t in axes(P, 2)]
 
     # Convert to MLJ format
-    X_table = MLJBase.table(X')
+    X_table = X' #MLJBase.table(X')
     y_cat = MLJBase.categorical(y)
 
     return X_table, y_cat
