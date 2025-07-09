@@ -73,6 +73,7 @@ function update_G!(
     W::AbstractVector{Tf},
     L::AbstractMatrix{Tf},
     epsC::Float64,
+    weights::AbstractVector{Tf}=Tf[],
 ) where {Tf<:AbstractFloat}
     # Get dimensions
     K_clusters, T_instances = size(G)
@@ -89,11 +90,22 @@ function update_G!(
         end
     end
 
+    # Apply sample weights to the discretisation error term
+    if !isempty(weights)
+        @inbounds for t in 1:T_instances
+            @simd for k in 1:K_clusters
+                disc_error[k, t] *= weights[t]
+            end
+        end
+    end
+
     if epsC > 0
         # Compute the classification error term
         logLP = Matrix{Tf}(undef, K_clusters, T_instances)  # logLP = ε_C × log.(Λ)' × Π
+        # Handle case where weights are provided - for now they only modify the discretisation error
+        prefactor = isempty(weights) ? Tf(epsC) : Tf(epsC / T_instances)
         LinearAlgebra.BLAS.gemm!(
-            'T', 'N', Tf(epsC), safelog(L; tol=eps(Tf)), P, Tf(0.0), logLP
+            'T', 'N', prefactor, safelog(L; tol=eps(Tf)), P, Tf(0.0), logLP
         )
 
         # Subtract the classification error term from the discretisation error term
@@ -137,23 +149,35 @@ function update_W!(
     C::AbstractMatrix{Tf},
     G::SparseMatrixCSC{Bool,Int},
     epsW::Float64,
+    weights::AbstractVector{Tf}=Tf[],
 ) where {Tf<:AbstractFloat}
     # Get dimensions
     D_features, T_instances = size(X)
 
     if isfinite(epsW)
         # Calculate the discretisation error for each feature dimension
-        b = zeros(Tf, D_features)   # b[d] will store -sum_t sum_k (X[d,t] - C[d,k]×Γ[k, t])^2
-        # Iterate over instances (columns of X)
-        @inbounds for t in 1:T_instances
-            cluster_idx = G.rowval[t]  # Which cluster instance t belongs to
-            @simd for d in 1:D_features
-                b[d] -= (X[d, t] - C[d, cluster_idx])^2
+        b = zeros(Tf, D_features)
+        if isempty(weights)
+            # b[d] will store -sum_t (X[d,t] - C[d,k]×Γ[k, t])^2 / T
+            @inbounds for t in 1:T_instances
+                cluster_idx = G.rowval[t]  # Which cluster instance t belongs to
+                @simd for d in 1:D_features
+                    b[d] -= (X[d, t] - C[d, cluster_idx])^2
+                end
+            end
+            b ./= T_instances
+        else
+            # b[d] will store -sum_t w[t] * (X[d,t] - C[d,k]×Γ[k, t])^2
+            @inbounds for t in 1:T_instances
+                cluster_idx = G.rowval[t]  # Which cluster instance t belongs to
+                @simd for d in 1:D_features
+                    b[d] -= weights[t] * (X[d, t] - C[d, cluster_idx])^2
+                end
             end
         end
 
         # Update W
-        softmax!(W, b; prefactor=Tf(T_instances * epsW))
+        softmax!(W, b; prefactor=Tf(epsW))
     else
         # Set W to the uniform distribution
         fill!(W, Tf(1.0) / D_features)

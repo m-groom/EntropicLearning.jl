@@ -279,7 +279,7 @@ get_rng(random_state::AbstractRNG) = random_state
 
 # Helper function to get Π from y_int - TODO: add tests
 function get_pi(
-    y_int::AbstractVector{<:Integer}, M_classes::Integer, Tf::Type{<:AbstractFloat}
+    y_int::AbstractVector{<:Integer}, M_classes::Integer, Tf::Type{<:AbstractFloat}=Float64
 )
     T_instances = length(y_int)
     Pi_mat = zeros(Tf, M_classes, T_instances)

@@ -45,14 +45,14 @@ function MMI.selectrows(::eSPAClassifier, I, X_mat)
 end
 
 # Helper function to check and format weights
-function format_weights(w, y::AbstractVector{<:Integer})
+function format_weights(w, y::AbstractVector{<:Integer}, Tf::Type{<:AbstractFloat}=Float64)
     w isa AbstractVector{<:Real} || throw(
         ArgumentError("Expected `weights === nothing` or `weights::AbstractVector{<:Real}")
     )
     length(y) == length(w) || throw(
         ArgumentError("weights passed must have the same length as the target vector.")
     )
-    weights = MMI.float(weights)
+    weights = convert.(Tf, w)
     EntropicLearning.normalise!(weights)
     return weights
 end

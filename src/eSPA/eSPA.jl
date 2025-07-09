@@ -63,17 +63,19 @@ function MMI.fit(
     # Initialise the timer
     to = TimerOutput()
 
-    # Ensure weights are normalised
-    if !isnothing(w)
-        weights = format_weights(w, y_int)
-    end
-
     # Extract dimensions and get Π
     Tf = eltype(X_mat)                                  # Floating point type
     D_features, T_instances = size(X_mat)               # Dimensions
     M_classes = length(classes)                         # Total number of classes
     Pi_mat = get_pi(y_int, M_classes, Tf)               # Target matrix
     classes_seen = MMI.decoder(classes)(unique(y_int))  # Classes seen in training data
+
+    # Ensure weights are normalised
+    if !isnothing(w)
+        weights = format_weights(w, y_int, Tf)
+    else
+        weights = Tf[]
+    end
 
     # --- Initialisation ---
     @timeit to "Initialisation" begin
@@ -91,7 +93,7 @@ function MMI.fit(
             iter += 1
 
             # Evaluation of the Γ-step
-            @timeit to "G" update_G!(G, X_mat, Pi_mat, C, W, L, model.epsC)
+            @timeit to "G" update_G!(G, X_mat, Pi_mat, C, W, L, model.epsC, weights)
 
             # Discard empty boxes
             notEmpty, K_new = find_empty(G)
@@ -101,7 +103,7 @@ function MMI.fit(
             end
 
             # Evaluation of the W-step
-            @timeit to "W" update_W!(W, X_mat, C, G, model.epsW)
+            @timeit to "W" update_W!(W, X_mat, C, G, model.epsW, weights)
 
             # Evaluation of the C-step
             @timeit to "C" update_C!(C, X_mat, G)
