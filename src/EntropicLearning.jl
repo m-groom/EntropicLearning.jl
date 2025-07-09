@@ -11,7 +11,7 @@ include("common/functions.jl")
 using MLJModelInterface
 using Roots
 include("utilities/eos.jl")
-export eos_weights, eos_distances, calculate_eos_weights, eos_outlier_scores
+export eos_distances, calculate_eos_weights, eos_outlier_scores
 
 # Include EOS wrapper model
 include("EOS/EOS.jl")

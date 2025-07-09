@@ -95,7 +95,7 @@ function update_weights!(
     T_instances = length(distances)
 
     if isfinite(alpha)
-        softmax!(weights, -distances; prefactor=Tf(alpha))
+        softmax!(weights, -convert.(promote_type(Tr, Tf), distances); prefactor=Tf(alpha))
     else
         # Set weights to the uniform distribution
         fill!(weights, Tf(1.0) / T_instances)
@@ -106,7 +106,7 @@ end
 """
     calculate_eos_weights(model, fitresult, X, alpha; y=nothing)
 
-Calculate EOS weights for data X using a fitted model.
+Calculate EOS weights for data (X, [y]) using a fitted model.
 
 # Arguments
 - `model`: A fitted MLJ model that implements `eos_distances`
@@ -131,8 +131,7 @@ end
 """
     eos_outlier_scores(model, fitresult, X, alpha; y=nothing)
 
-Calculate outlier scores (1 - weights) for data X using a fitted model. The weights are
-rescaled so that the minimum weight is 0 and the maximum weight is 1.
+Calculate outlier scores (exp(-T * weights)) for data (X, [y]) using a fitted model.
 
 Higher scores indicate more outlying samples.
 
@@ -144,11 +143,11 @@ Higher scores indicate more outlying samples.
 - `y`: Target data (optional)
 
 # Returns
-- Vector of outlier scores in [0,1]
+- Vector of outlier scores in (0,1]
 """
 function eos_outlier_scores(model, fitresult, alpha::Real, X, y=nothing)
     weights = calculate_eos_weights(model, fitresult, alpha, X, y)
-    return 1.0 .- (weights .- minimum(weights)) ./ (maximum(weights) - minimum(weights))
+    return exp.(-length(weights) .* weights)
 end
 
 """
@@ -265,8 +264,8 @@ Calculate EOS outlier scores by searching for an `alpha` that yields a target ef
 dimension `target_Deff`.
 
 This method finds the `alpha` that produces EOS weights with a specific effective
-dimension, and then computes the corresponding outlier scores (`1 .- weight`). It serves as a
-convenience wrapper around `calculate_eos_weights`.
+dimension, and then computes the corresponding outlier scores (`exp(-T * weights)`).
+It serves as a convenience wrapper around `calculate_eos_weights`.
 
 # Arguments
 - `model`: A fitted MLJ model that implements `eos_distances`.
@@ -296,9 +295,7 @@ function eos_outlier_scores(
     result = calculate_eos_weights(
         model, fitresult, X, alpha_range, target_Deff; y=y, kwargs...
     )
-    weights = result.weights
-    scores = 1.0 .- (weights .- minimum(weights)) ./ (maximum(weights) - minimum(weights))
 
     # Calculate outlier scores and return with the found alpha.
-    return (scores=scores, alpha=result.alpha)
+    return (scores=exp.(-length(result.weights) .* result.weights), alpha=result.alpha)
 end

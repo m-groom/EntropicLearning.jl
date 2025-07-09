@@ -14,11 +14,7 @@ using Clustering.Distances: SqEuclidean, WeightedSqEuclidean
 # Access eSPA module
 import EntropicLearning.eSPA as eSPA
 
-# # Include the core and extras module functions
-# include("../src/eSPA/core.jl")
-# include("../src/eSPA/extras.jl")
-
-@testset "extras" begin
+@testset "eSPA extras" begin
     @testset "mi_continuous_discrete function tests" begin
 
         # Test 1: deterministic threshold, expected MI = ln(2)
@@ -469,7 +465,7 @@ import EntropicLearning.eSPA as eSPA
     end
 end
 
-@testset "core" begin
+@testset "eSPA core" begin
     # Test data generation
     D_features = 3
     T_instances = 100
