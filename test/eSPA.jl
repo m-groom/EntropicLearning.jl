@@ -886,7 +886,7 @@ end
         end
 
         @testset "Matrix property preservation" begin
-            G = report.G
+            G = fitresult.G
             C = fitresult.C
             W = fitresult.W
             L = fitresult.L
@@ -920,7 +920,6 @@ end
         mach = MLJBase.machine(model, X_table, y_cat)
         MLJBase.fit!(mach; verbosity=0)
         fitresult = mach.fitresult
-        report = MLJBase.report(mach)
 
         @testset "Deterministic behavior" begin
             # Test same RNG seeds produce identical results
@@ -928,9 +927,8 @@ end
             mach1 = MLJBase.machine(model1, X_table, y_cat)
             MLJBase.fit!(mach1; verbosity=0)
             fitresult1 = mach1.fitresult
-            report1 = MLJBase.report(mach1)
 
-            @test report.G == report1.G
+            @test fitresult.G == fitresult1.G
             @test fitresult.C == fitresult1.C
             @test fitresult.W == fitresult1.W
             @test fitresult.L == fitresult1.L
@@ -945,7 +943,6 @@ end
             mach_unbias = MLJBase.machine(model_unbias, X_table, y_cat)
             MLJBase.fit!(mach_unbias; verbosity=0)
             fitresult_unbias = mach_unbias.fitresult
-            report_unbias = MLJBase.report(mach_unbias)
 
             _, G_unbias = eSPA.predict_proba(
                 model_unbias,
@@ -954,7 +951,7 @@ end
                 fitresult_unbias.L,
                 X_transposed,
             )
-            @test G_unbias == report_unbias.G
+            @test G_unbias == fitresult_unbias.G
 
             # Test unbias=true + iterative_pred=true case
             model_iter = eSPAClassifier(;
@@ -969,7 +966,6 @@ end
             mach_iter = MLJBase.machine(model_iter, X_table, y_cat)
             MLJBase.fit!(mach_iter; verbosity=0)
             fitresult_iter = mach_iter.fitresult
-            report_iter = MLJBase.report(mach_iter)
 
             _, G_iter = eSPA.predict_proba(
                 model_iter,
@@ -978,7 +974,7 @@ end
                 fitresult_iter.L,
                 X_transposed,
             )
-            @test G_iter == report_iter.G
+            @test G_iter == fitresult_iter.G
         end
     end
 
@@ -992,7 +988,6 @@ end
         mach = MLJBase.machine(model, X_table, y_cat)
         MLJBase.fit!(mach; verbosity=0)
         fitresult = mach.fitresult
-        report = MLJBase.report(mach)
 
         # Train a k-means model from Clustering.jl
         rng = Random.Xoshiro(42)
@@ -1004,7 +999,7 @@ end
         # Check that centroids are the same
         @test fitresult.C ≈ KMeansResult.centers
         # Check that assignments are the same
-        @test report.G.rowval == KMeansResult.assignments
+        @test fitresult.G.rowval == KMeansResult.assignments
     end
 
     @testset "9. MLJ Interface" begin
@@ -1013,7 +1008,6 @@ end
         mach = MLJBase.machine(model, X_table, y_cat)
         MLJBase.fit!(mach; verbosity=0)
         fitresult = mach.fitresult
-        report = MLJBase.report(mach)
 
         @testset "fitted_params tests" begin
             fitted_params_result = MLJBase.fitted_params(mach)

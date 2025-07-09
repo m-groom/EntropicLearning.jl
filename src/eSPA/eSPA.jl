@@ -34,10 +34,11 @@ MMI.@mlj_model mutable struct eSPAClassifier <: MMI.Probabilistic
 end
 
 # Fit Result Structure
-struct eSPAFitResult{Tm<:AbstractMatrix,Tv<:AbstractVector,Tc<:AbstractVector}
+struct eSPAFitResult{Tm<:AbstractMatrix,Tv<:AbstractVector,Tg<:AbstractMatrix,Tc<:AbstractVector}
     C::Tm       # Centroids: D x K
     W::Tv       # Feature weights: D-element vector
     L::Tm       # Conditional probabilities for clusters: M x K
+    G::Tg       # Cluster affiliations: K × T
     classes::Tc # Vector of unique class labels (CategoricalValue)
 end
 
@@ -144,9 +145,9 @@ function MMI.fit(model::eSPAClassifier, verbosity::Int, X, y)
     n_params = Deff * (K_current + 1) + (M_classes - 1) * K_current
 
     # --- Return fitresult, cache and report ---
-    fitresult = eSPAFitResult(C, W, L, classes)
+    fitresult = eSPAFitResult(C, W, L, G, classes)
     cache = nothing
-    report = (iterations=iter, loss=loss[1:(iter + 1)], timings=to, G=G, n_params=n_params)
+    report = (iterations=iter, loss=loss[1:(iter + 1)], timings=to, n_params=n_params)
 
     return (fitresult, cache, report)
 end

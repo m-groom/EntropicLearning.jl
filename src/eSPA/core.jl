@@ -228,8 +228,6 @@ end
 function update_P!(
     P::AbstractMatrix{Tf}, L::AbstractMatrix{Tf}, G::SparseMatrixCSC{Bool,Int}
 ) where {Tf<:AbstractFloat}
-    # From entlearn:
-    # P = assign_closest(-safelog(L; tol=eps(Tf)) * G)
     # Calculate Π = Λ × Γ
     mul!(P, L, G)
 
