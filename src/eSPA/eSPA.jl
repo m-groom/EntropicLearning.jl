@@ -74,7 +74,7 @@ function MMI.fit(
     if !isnothing(w)
         weights = format_weights(w, y_int, Tf)
     else
-        weights = Tf[]
+        weights = fill(Tf(1 / T_instances), T_instances)
     end
 
     # --- Initialisation ---
@@ -83,7 +83,7 @@ function MMI.fit(
         K_current = size(C, 2)                      # Current number of clusters
         loss = fill(Tf(Inf), model.max_iter + 1)    # Loss for each iteration
         iter = 0                                    # Iteration counter
-        loss[1] = calc_loss(X_mat, Pi_mat, C, W, L, G, model.epsC, model.epsW)
+        loss[1] = calc_loss(X_mat, Pi_mat, C, W, L, G, model.epsC, model.epsW, weights)
     end
 
     # --- Main Optimisation Loop ---
@@ -113,7 +113,7 @@ function MMI.fit(
 
             # Update loss
             @timeit to "Loss" loss[iter + 1] = calc_loss(
-                X_mat, Pi_mat, C, W, L, G, model.epsC, model.epsW
+                X_mat, Pi_mat, C, W, L, G, model.epsC, model.epsW, weights
             )
 
             # Check if loss function has increased
@@ -128,12 +128,12 @@ function MMI.fit(
     @timeit to "Unbias" begin
         if model.unbias
             # Unbias Γ
-            update_G!(G, X_mat, Pi_mat, C, W, L, Tf(0.0))
+            update_G!(G, X_mat, Pi_mat, C, W, L, Tf(0.0), weights)
 
             if model.iterative_pred
                 P = Matrix{Tf}(undef, M_classes, T_instances)
                 update_P!(P, L, G)
-                iterative_predict!(P, G, model, X_mat, C, W, L; verbosity=verbosity)
+                iterative_predict!(P, G, model, X_mat, C, W, L, weights; verbosity=verbosity)
             end
 
             # Discard empty boxes

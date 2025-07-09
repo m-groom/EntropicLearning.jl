@@ -73,37 +73,30 @@ function update_G!(
     W::AbstractVector{Tf},
     L::AbstractMatrix{Tf},
     epsC::Float64,
-    weights::AbstractVector{Tf}=Tf[],
+    weights::AbstractVector{Tf},
 ) where {Tf<:AbstractFloat}
     # Get dimensions
     K_clusters, T_instances = size(G)
 
-    # Compute the discretisation error term: disc_error[k, t] = sum_d W[d] × (X[d, t] - C[d, k])^2
+    # Compute the discretisation error term
+    # disc_error[k, t] = weights[t] * sum_d W[d] × (X[d, t] - C[d, k])^2
     disc_error = Matrix{Tf}(undef, K_clusters, T_instances)
     @inbounds for t in 1:T_instances
+        wt = weights[t]
         for k in 1:K_clusters
             temp = Tf(0.0)  # Cache current value for sum
             @simd for d in axes(X, 1)
                 temp += W[d] * (X[d, t] - C[d, k])^2
             end
-            disc_error[k, t] = temp # Store result back to disc_error
-        end
-    end
-
-    # Apply sample weights to the discretisation error term
-    if !isempty(weights)
-        @inbounds for t in 1:T_instances
-            @simd for k in 1:K_clusters
-                disc_error[k, t] *= weights[t]
-            end
+            disc_error[k, t] = wt * temp # Store result back to disc_error
         end
     end
 
     if epsC > 0
         # Compute the classification error term
         logLP = Matrix{Tf}(undef, K_clusters, T_instances)  # logLP = ε_C × log.(Λ)' × Π
-        # Handle case where weights are provided - for now they only modify the discretisation error
-        prefactor = isempty(weights) ? Tf(epsC) : Tf(epsC / T_instances)
+        # For now the weights only modify the discretisation error
+        prefactor = Tf(epsC / T_instances)  # TODO: modify this for weighted case
         LinearAlgebra.BLAS.gemm!(
             'T', 'N', prefactor, safelog(L; tol=eps(Tf)), P, Tf(0.0), logLP
         )
@@ -149,15 +142,10 @@ function update_W!(
     C::AbstractMatrix{Tf},
     G::SparseMatrixCSC{Bool,Int},
     epsW::Float64,
-    weights::AbstractVector{Tf}=Tf[],
+    weights::AbstractVector{Tf},
 ) where {Tf<:AbstractFloat}
     # Get dimensions
     D_features, T_instances = size(X)
-
-    if isempty(weights)
-        # b[d] will store -sum_t (X[d,t] - C[d,k]×Γ[k, t])^2 / T
-        weights = fill(Tf(1 / T_instances), T_instances)
-    end
 
     # Calculate the discretisation error for each feature dimension
     if isfinite(epsW)
@@ -166,8 +154,9 @@ function update_W!(
 
         @inbounds for t in 1:T_instances
             cluster_idx = G.rowval[t]  # Which cluster instance t belongs to
+            wt = weights[t]
             @simd for d in 1:D_features
-                b[d] -= weights[t] * (X[d, t] - C[d, cluster_idx])^2
+                b[d] -= wt * (X[d, t] - C[d, cluster_idx])^2
             end
         end
 
@@ -215,32 +204,35 @@ function calc_loss(
     G::SparseMatrixCSC{Bool,Int},
     epsC::Float64,
     epsW::Float64,
+    weights::AbstractVector{Tf},
 ) where {Tf<:AbstractFloat}
     # Get dimensions
     D_features, T_instances = size(X)
 
     # Calculate the discretisation error
-    disc_error = Tf(0.0) # = sum_t sum_d sum_k W[d] * (X[d, t] - C[d, k]×Γ[k, t])^2
+    disc_error = Tf(0.0) # sum_tdk weights[t] * W[d] * (X[d, t] - C[d, k]×Γ[k, t])^2
     @inbounds for t in 1:T_instances
         cluster_idx = G.rowval[t]
+        temp = Tf(0.0)
         @simd for d in 1:D_features
-            disc_error += W[d] * (X[d, t] - C[d, cluster_idx])^2
+            temp += W[d] * (X[d, t] - C[d, cluster_idx])^2
         end
+        disc_error += weights[t] * temp
     end
 
-    # Calculate the classification error
+    # Calculate the classification error - TODO: include contribution from weights
     @inbounds LG = view(L, :, G.rowval)   # LG = Λ × Γ
-    class_error = Tf(epsC) * cross_entropy(P, LG; tol=eps(Tf)) # Includes the minus sign
+    class_error = Tf(epsC / T_instances) * cross_entropy(P, LG; tol=eps(Tf))
 
     # Calculate the entropy term
     if isfinite(epsW)
-        entr_W = Tf(epsW) * entropy(W; tol=eps(Tf))            # Includes the minus sign
+        entr_W = Tf(epsW) * entropy(W; tol=eps(Tf)) # Includes the minus sign
     else
         entr_W = Tf(0.0)
     end
 
     # Calculate the loss
-    return (disc_error + class_error) / T_instances - entr_W
+    return disc_error + class_error  - entr_W
 end
 
 # Function to calculate Π
@@ -281,15 +273,16 @@ function predict_proba(
         T_instances,
     )
     P = Matrix{Tf}(undef, M_classes, T_instances)
+    weights = fill(Tf(1 / T_instances), T_instances) # TODO: do we need to predict these?
 
     # Update Γ
-    update_G!(G, X, P, C, W, L, Tf(0.0))
+    update_G!(G, X, P, C, W, L, Tf(0.0), weights)
 
     # Update Π
     update_P!(P, L, G)
 
     if model.iterative_pred
-        iterative_predict!(P, G, model, X, C, W, L)
+        iterative_predict!(P, G, model, X, C, W, L, weights)
     end
 
     # Return Π
@@ -304,24 +297,25 @@ function iterative_predict!(
     X::AbstractMatrix{Tf},
     C::AbstractMatrix{Tf},
     W::AbstractVector{Tf},
-    L::AbstractMatrix{Tf};
+    L::AbstractMatrix{Tf},
+    weights::AbstractVector{Tf};
     verbosity::Int=0,
 ) where {Tf<:AbstractFloat}
     iter = 0                                # Iteration counter
     loss = fill(Tf(Inf), model.max_iter + 1)    # Loss for each iteration
-    loss[1] = calc_loss(X, P, C, W, L, G, model.epsC, model.epsW)
+    loss[1] = calc_loss(X, P, C, W, L, G, model.epsC, model.epsW, weights)
     while !converged(loss, iter, model.max_iter, model.tol)
         # Update iteration counter
         iter += 1
 
         # Update Γ
-        update_G!(G, X, P, C, W, L, model.epsC)
+        update_G!(G, X, P, C, W, L, model.epsC, weights)
 
         # Update Π
         update_P!(P, L, G)
 
         # Calculate the loss
-        loss[iter + 1] = calc_loss(X, P, C, W, L, G, model.epsC, model.epsW)
+        loss[iter + 1] = calc_loss(X, P, C, W, L, G, model.epsC, model.epsW, weights)
 
         # Check if loss function has increased
         check_loss(loss, iter, verbosity; context="iterative prediction")
