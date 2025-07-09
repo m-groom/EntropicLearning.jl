@@ -277,6 +277,20 @@ end
 get_rng(random_state::Int) = Xoshiro(random_state)
 get_rng(random_state::AbstractRNG) = random_state
 
+# Helper function to get Π from y_int - TODO: add tests
+function get_pi(
+    y_int::AbstractVector{<:Integer}, M_classes::Integer, Tf::Type{<:AbstractFloat}
+)
+    T_instances = length(y_int)
+    Pi_mat = zeros(Tf, M_classes, T_instances)
+    if T_instances > 0
+        for t in 1:T_instances
+            Pi_mat[y_int[t], t] = one(Tf)
+        end
+    end
+    return Pi_mat
+end
+
 """
     get_eff(D::Ti, ε::Tf; normalise::Bool=true) where {Tf<:AbstractFloat,Ti<:Integer}
 
@@ -376,11 +390,11 @@ end
 # Implementation of EOS distances for eSPAClassifier
 # ==============================================================================
 # TODO: Add cross-entropy term
-function EntropicLearning.eos_distances(model::eSPAClassifier, fitresult, X, y=nothing)
+function EntropicLearning.eos_distances(model::eSPAClassifier, fitresult, X, P=nothing)
     # Extract the model parameters from the fitresult
     C = fitresult.C
     W = fitresult.W
-    G = fitresult.G # TODO: Either need to add this to the fitresult also pass the report
+    G = fitresult.G
     # Pre-compute C × Γ
     CG = C * G
     # Calculate the discretisation error (per sample)

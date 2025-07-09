@@ -11,9 +11,10 @@ using TimerOutputs
 using NearestNeighbors: KDTree, knn, inrange, Chebyshev
 using SpecialFunctions: digamma
 using Statistics: mean, std
+using Tables
 import ..EntropicLearning
 
-# Include common functions
+# Include common functions - TODO: call from EntropicLearning instead
 include("../common/functions.jl")
 
 const MMI = MLJModelInterface
@@ -34,7 +35,9 @@ MMI.@mlj_model mutable struct eSPAClassifier <: MMI.Probabilistic
 end
 
 # Fit Result Structure
-struct eSPAFitResult{Tm<:AbstractMatrix,Tv<:AbstractVector,Tg<:AbstractMatrix,Tc<:AbstractVector}
+struct eSPAFitResult{
+    Tm<:AbstractMatrix,Tv<:AbstractVector,Tg<:AbstractMatrix,Tc<:AbstractVector
+}
     C::Tm       # Centroids: D x K
     W::Tv       # Feature weights: D-element vector
     L::Tm       # Conditional probabilities for clusters: M x K
@@ -45,34 +48,39 @@ end
 # Include core eSPA functions for intitialisation, training and prediction
 include("core.jl")
 include("extras.jl")
+include("frontend.jl") # MLJ data front-end
 
 # MLJ Interface
-function MMI.fit(model::eSPAClassifier, verbosity::Int, X, y)
+function MMI.fit(
+    model::eSPAClassifier,
+    verbosity::Int,
+    X_mat,
+    y_int,
+    column_names,
+    classes,
+    w=nothing,
+)
     # Initialise the timer
     to = TimerOutput()
 
-    # TODO: write a data front-end
-    X_mat = MMI.matrix(X; transpose=true)
-    D_features, T_instances = size(X_mat)
-    classes = MMI.classes(y[1]) # classes_seen = MMI.decoder(classes)(unique(y_int))
-    M_classes = length(classes)
-    y_int = MMI.int(y)  # TODO: pass y_int using data front-end
-
-    # TODO: make this a function
-    Tf = eltype(X_mat)
-    Pi_mat = zeros(Tf, M_classes, T_instances)
-    if T_instances > 0
-        for t in 1:T_instances
-            Pi_mat[y_int[t], t] = one(Tf)
-        end
+    # Ensure weights are normalised
+    if !isnothing(w)
+        weights = format_weights(w, y_int)
     end
+
+    # Extract dimensions and get Π
+    Tf = eltype(X_mat)                                  # Floating point type
+    D_features, T_instances = size(X_mat)               # Dimensions
+    M_classes = length(classes)                         # Total number of classes
+    Pi_mat = get_pi(y_int, M_classes, Tf)               # Target matrix
+    classes_seen = MMI.decoder(classes)(unique(y_int))  # Classes seen in training data
 
     # --- Initialisation ---
     @timeit to "Initialisation" begin
         C, W, L, G = initialise(model, X_mat, y_int, D_features, T_instances, M_classes)
-        K_current = size(C, 2)                  # Current number of clusters
+        K_current = size(C, 2)                      # Current number of clusters
         loss = fill(Tf(Inf), model.max_iter + 1)    # Loss for each iteration
-        iter = 0                                # Iteration counter
+        iter = 0                                    # Iteration counter
         loss[1] = calc_loss(X_mat, Pi_mat, C, W, L, G, model.epsC, model.epsW)
     end
 
@@ -147,18 +155,23 @@ function MMI.fit(model::eSPAClassifier, verbosity::Int, X, y)
     # --- Return fitresult, cache and report ---
     fitresult = eSPAFitResult(C, W, L, G, classes)
     cache = nothing
-    report = (iterations=iter, loss=loss[1:(iter + 1)], timings=to, n_params=n_params)
+    report = (
+        iterations=iter,
+        loss=loss[1:(iter + 1)],
+        timings=to,
+        n_params=n_params,
+        classes=classes_seen,
+        features=column_names,
+    )
 
     return (fitresult, cache, report)
 end
 
-function MMI.predict(model::eSPAClassifier, fitresult::eSPAFitResult, Xnew)
-
-    # TODO: write a data front-end
-    X_mat = MMI.matrix(Xnew; transpose=true)
-
-    Pi_new, G_new = predict_proba(model, fitresult.C, fitresult.W, fitresult.L, X_mat)  # TODO: store G_new in the report
-    probabilities = Pi_new'
+function MMI.predict(model::eSPAClassifier, fitresult::eSPAFitResult, X_mat)
+    # TODO: store G_new in the report
+    Pi_new, G_new = predict_proba(model, fitresult.C, fitresult.W, fitresult.L, X_mat)
+    probabilities = transpose(Pi_new)
+    # TODO: do we also need to calculate new sample weights?
 
     return MMI.UnivariateFinite(fitresult.classes, probabilities)
 end
@@ -168,21 +181,16 @@ function MMI.fitted_params(::eSPAClassifier, fitresult::eSPAFitResult)
 end
 
 function MMI.feature_importances(::eSPAClassifier, fitresult::eSPAFitResult, report)
-    # TODO: store feature names in the report
-
-    # Extract feature weights from fitresult
     W = fitresult.W
-
-    # Create feature names (since they're not stored in fitresult)
-    feature_names = [Symbol("feature_$i") for i in eachindex(W)]
-
+    importance = one(eltype(W)) .- exp.(-length(W) .* W)
     # Create pairs of feature_name => importance
-    return [feature_names[i] => W[i] for i in eachindex(W)]
+    return [report.features[i] => importance[i] for i in eachindex(importance)]
 end
 
 # MLJ Traits
 MMI.reports_feature_importances(::Type{<:eSPAClassifier}) = true
 MMI.iteration_parameter(::Type{<:eSPAClassifier}) = :max_iter
+MMI.supports_weights(::Type{<:eSPAClassifier}) = true
 
 MMI.metadata_model(
     eSPAClassifier;

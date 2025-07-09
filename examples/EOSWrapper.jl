@@ -48,5 +48,5 @@ X, y = make_regression(
 
 # Wrap the model in an EOSWrapper
 lr_model = LinearRegressor()
-eos_model = EOSWrapper(model=lr_model, alpha=0.1)
-mach = machine(eos_model, X, y) |> fit!
+eos_model = EOSWrapper(; model=lr_model, alpha=0.1)
+mach = fit!(machine(eos_model, X, y))

@@ -6,10 +6,10 @@ using SparseArrays
 using TimerOutputs
 import ..EntropicLearning
 
-# Include common functions
+# Include common functions - TODO: call from EntropicLearning instead
 include("../common/functions.jl")
 
-# Include EOS utility functions
+# Include EOS utility functions - TODO: call from EntropicLearning instead
 include("../utilities/eos.jl")
 
 const MMI = MLJModelInterface
@@ -190,20 +190,17 @@ function MMI.fit(eos::EOSWrapper, verbosity::Int, X, y)
 end
 
 # Common implementation
-function _fit(eos::EOSWrapper, verbosity::Int, X, y)
+function _fit(eos::EOSWrapper, verbosity::Int, X, y=nothing)
     # Initialise the timer
     to = TimerOutput()
 
     # Reformat data for the wrapped model
     if isnothing(y)
         args = MMI.reformat(eos.model, X)
-        model_specific_y = nothing
     else
         args = MMI.reformat(eos.model, X, y)
-        model_specific_y = args[2]
     end
-    model_specific_X = args[1]
-    T_instances = MMI.nrows(model_specific_X)
+    T_instances = MMI.nrows(args[1])    # Assumes first argument is the data matrix
 
     # Initialise weights and distances - TODO: fit the model without weights first
     Tf = Float64
@@ -218,16 +215,14 @@ function _fit(eos::EOSWrapper, verbosity::Int, X, y)
     iterations = 0
 
     # Prepare arguments for fitting the inner model
-    fit_args = if isnothing(model_specific_y)
-        (model_specific_X, weights)
-    else
-        (model_specific_X, model_specific_y, weights)
-    end
+    fit_args = (args..., weights)
 
     # --- Main Optimisation Loop ---
     @timeit to "Training" begin
         for iter in 1:eos.max_iter
+            # Increment iteration counter
             iterations += 1
+
             # θ-step: Fit model with current weights - TODO: use update if it is available
             @timeit to "inner_fit" inner_fitresult, inner_cache, inner_report = MMI.fit(
                 eos.model, verbosity - 1, fit_args...

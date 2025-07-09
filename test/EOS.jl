@@ -20,9 +20,7 @@ function create_test_distances(n=10; outlier_ratio=0.1)
 end
 
 @testset "EOS Utilities" begin
-
     @testset "eos_weights function" begin
-
         @testset "Basic functionality" begin
             distances = [0.1, 0.2, 2.0, 0.1, 0.3]
             alpha = 1.0
@@ -113,8 +111,12 @@ end
 
         @testset "Error handling" begin
             # Invalid alpha range
-            @test_throws ErrorException EntropicLearning.eos_weights(distances, (0.0, 1.0), 0.5)  # alpha range contains 0
-            @test_throws AssertionError EntropicLearning.eos_weights(distances, (2.0, 1.0), 0.5)  # invalid range
+            @test_throws ErrorException EntropicLearning.eos_weights(
+                distances, (0.0, 1.0), 0.5
+            )  # alpha range contains 0
+            @test_throws AssertionError EntropicLearning.eos_weights(
+                distances, (2.0, 1.0), 0.5
+            )  # invalid range
         end
     end
 
@@ -179,7 +181,6 @@ end
     # end
 
     @testset "eos_distances protocol" begin
-
         @testset "Default error behavior" begin
             struct DummyModel end
             dummy_model = DummyModel()
