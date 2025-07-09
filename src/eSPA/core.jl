@@ -154,25 +154,20 @@ function update_W!(
     # Get dimensions
     D_features, T_instances = size(X)
 
+    if isempty(weights)
+        # b[d] will store -sum_t (X[d,t] - C[d,k]×Γ[k, t])^2 / T
+        weights = fill(Tf(1 / T_instances), T_instances)
+    end
+
+    # Calculate the discretisation error for each feature dimension
     if isfinite(epsW)
-        # Calculate the discretisation error for each feature dimension
+        # b[d] will store -sum_t weights[t] * (X[d,t] - C[d,k]×Γ[k, t])^2
         b = zeros(Tf, D_features)
-        if isempty(weights)
-            # b[d] will store -sum_t (X[d,t] - C[d,k]×Γ[k, t])^2 / T
-            @inbounds for t in 1:T_instances
-                cluster_idx = G.rowval[t]  # Which cluster instance t belongs to
-                @simd for d in 1:D_features
-                    b[d] -= (X[d, t] - C[d, cluster_idx])^2
-                end
-            end
-            b ./= T_instances
-        else
-            # b[d] will store -sum_t w[t] * (X[d,t] - C[d,k]×Γ[k, t])^2
-            @inbounds for t in 1:T_instances
-                cluster_idx = G.rowval[t]  # Which cluster instance t belongs to
-                @simd for d in 1:D_features
-                    b[d] -= weights[t] * (X[d, t] - C[d, cluster_idx])^2
-                end
+
+        @inbounds for t in 1:T_instances
+            cluster_idx = G.rowval[t]  # Which cluster instance t belongs to
+            @simd for d in 1:D_features
+                b[d] -= weights[t] * (X[d, t] - C[d, cluster_idx])^2
             end
         end
 
