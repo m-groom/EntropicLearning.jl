@@ -195,12 +195,12 @@ function _fit(eos::EOSWrapper, verbosity::Int, X, y=nothing)
     to = TimerOutput()
 
     # Reformat data for the wrapped model
+    T_instances = MMI.nrows(X)
     if isnothing(y)
         args = MMI.reformat(eos.model, X)
     else
         args = MMI.reformat(eos.model, X, y)
     end
-    T_instances = MMI.nrows(args[1])    # Assumes first argument is the data matrix
 
     # Initialise weights and distances - TODO: fit the model without weights first
     Tf = Float64

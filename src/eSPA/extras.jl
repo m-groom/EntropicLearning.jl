@@ -389,8 +389,8 @@ end
 # ==============================================================================
 # Implementation of EOS distances for eSPAClassifier
 # ==============================================================================
-# TODO: Add cross-entropy term
-function EntropicLearning.eos_distances(model::eSPAClassifier, fitresult, X, P=nothing)
+# TODO: Add cross-entropy term (will need y - may need to define separate methods)
+function EntropicLearning.eos_distances(model::eSPAClassifier, fitresult, X, args...)
     # Extract the model parameters from the fitresult
     C = fitresult.C
     W = fitresult.W
@@ -398,7 +398,7 @@ function EntropicLearning.eos_distances(model::eSPAClassifier, fitresult, X, P=n
     # Pre-compute C × Γ
     CG = C * G
     # Calculate the discretisation error (per sample)
-    disc_error = zeros(eltype(X), size(X, 2))  # Assumes X is a D×T matrix. TODO: Ensure this is the case
+    disc_error = zeros(eltype(X), size(X, 2))  # Assumes X is a D×T matrix
     @inbounds for t in axes(X, 2)
         temp = zero(eltype(X))  # Cache current value for sum
         @simd for d in axes(X, 1)
