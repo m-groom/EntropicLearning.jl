@@ -171,7 +171,7 @@ MMI.target_scitype(::Type{<:ProbabilisticEOSWrapper{M}}) where {M} = MMI.target_
 
 struct EOSFitResult{F,T<:AbstractFloat}
     inner_fitresult::F
-    weights::AbstractVector{T}
+    weights::AbstractVector{T}  # TODO: store distances instead
 end
 
 # ==============================================================================
@@ -275,16 +275,18 @@ end
 # Transform and Predict Methods
 # ==============================================================================
 
-# Transform always returns outlier scores (for both supervised and unsupervised)
+# Transform always returns weights (for both supervised and unsupervised)
+# TODO: modify so that weights also include distances from training data
 function MMI.transform(eos::EOSWrapper, fitresult::EOSFitResult, Xnew)
     # Reformat new data for the wrapped model
-    args = MMI.reformat(eos.model, Xnew)
-    return EntropicLearning.eos_outlier_scores(
-        eos.model, fitresult.inner_fitresult, eos.alpha, args...
+    args = MMI.reformat(eos.model, Xnew) # Assume first argument is the data matrix
+    # TODO: call root-finding method instead?
+    return EntropicLearning.calculate_eos_weights(
+        eos.model, fitresult.inner_fitresult, eos.alpha, args[1]
     )
 end
 
-# For supervised models only
+# For supervised models only - TODO: return new weights in report (from transform)
 function MMI.predict(
     eos::Union{DeterministicEOSWrapper,ProbabilisticEOSWrapper},
     fitresult::EOSFitResult,
