@@ -153,10 +153,10 @@ function update_W!(
         b = zeros(Tf, D_features)
 
         @inbounds for t in 1:T_instances
-            cluster_idx = G.rowval[t]  # Which cluster instance t belongs to
+            k = G.rowval[t]  # Which cluster instance t belongs to
             wt = weights[t]
             @simd for d in 1:D_features
-                b[d] -= wt * (X[d, t] - C[d, cluster_idx])^2
+                b[d] -= wt * (X[d, t] - C[d, k])^2
             end
         end
 
@@ -173,15 +173,32 @@ end
 function update_C!(
     C::AbstractMatrix{Tf}, X::AbstractMatrix{Tf}, G::SparseMatrixCSC{Bool,Int}, weights::AbstractVector{Tf}
 ) where {Tf<:AbstractFloat}
-    # # Calculate the new centroids
-    # mul!(C, X, G')  # C = X × Γ'
+    # Get dimensions
+    D_features, T_instances = size(X)
+    K_clusters = size(C, 2)
 
-    # # Average over the number of instances in each cluster
-    # # Clusters are guaranteed to be non-empty if remove_empty has been called first
-    # C ./= sum(G; dims=2)'
-    denom = G * weights
-    numerator = X * (weights .* G')
-    C .= numerator ./ denom'
+    # Reset the centroids
+    fill!(C, Tf(0.0))
+    denom = zeros(Tf, K_clusters)
+
+    # Accumulate the numerator and denominator
+    @inbounds for t in 1:T_instances
+        k = G.rowval[t]             # Cluster assignment for instance t
+        wt = weights[t]             # Weight for instance t
+        denom[k] += wt              # Accumulate the denominator
+        @simd for d in 1:D_features
+            C[d, k] += wt * X[d, t] # Accumulate the numerator
+        end
+    end
+
+    # Apply the denominator
+    @inbounds for k in 1:K_clusters
+        if denom[k] > 0 # Avoid division by zero
+            @simd for d in 1:D_features
+                C[d, k] /= denom[k]
+            end
+        end
+    end
     return nothing
 end
 
@@ -215,10 +232,10 @@ function calc_loss(
     # Calculate the discretisation error
     disc_error = Tf(0.0) # sum_tdk weights[t] * W[d] * (X[d, t] - C[d, k]×Γ[k, t])^2
     @inbounds for t in 1:T_instances
-        cluster_idx = G.rowval[t]
+        k = G.rowval[t]
         temp = Tf(0.0)
         @simd for d in 1:D_features
-            temp += W[d] * (X[d, t] - C[d, cluster_idx])^2
+            temp += W[d] * (X[d, t] - C[d, k])^2
         end
         disc_error += weights[t] * temp
     end
