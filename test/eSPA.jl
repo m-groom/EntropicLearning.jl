@@ -488,6 +488,11 @@ end
     # Create weights
     weights = fill(1.0 / T_instances, T_instances)
 
+    # Create random weights
+    rng_weights = Random.MersenneTwister(456)
+    weights_random = rand(rng_weights, T_instances)
+    weights_random ./= sum(weights_random)
+
     @testset "1. Initialisation" begin
         # Test with different initialization modes
         for (mi_init, kpp_init) in
@@ -764,10 +769,10 @@ end
         @testset "predict_proba tests" begin
             X_test = X_transposed[:, 1:10]
             # Test with iterative_pred = false
-            P, _ = eSPA.predict_proba(model, fitresult.C, fitresult.W, fitresult.L, X_test)
-            @test size(P) == (M_classes, 10)
-            @test all(sum(P; dims=1) .≈ 1.0)
-            @test all(P .>= 0)
+            P_test, _ = eSPA.predict_proba(model, fitresult.C, fitresult.W, fitresult.L, X_test)
+            @test size(P_test) == (M_classes, 10)
+            @test all(sum(P_test; dims=1) .≈ 1.0)
+            @test all(P_test .>= 0)
 
             # Test with iterative_pred = true
             model_iter_pred = eSPAClassifier(;
@@ -1044,6 +1049,171 @@ end
                 @test 0.0 <= pair.second <= 1.0
             end
 
+        end
+    end
+
+    @testset "10. Core Update Functions - Weighted" begin
+
+        # Setup for weighted update function tests
+        model = eSPAClassifier(; K=K_clusters, epsC=1e-3, epsW=1e-1, random_state=101)
+        C, W, L, G = eSPA.initialise(
+            model, X_transposed, y_int, D_features, T_instances, M_classes
+        )
+
+        @testset "update_G! with random weights" begin
+            G_orig = copy(G)
+            loss_before = eSPA.calc_loss(
+                X_transposed, P, C, W, L, G, model.epsC, model.epsW, weights_random
+            )
+
+            eSPA.update_G!(G, X_transposed, P, C, W, L, model.epsC, weights_random)
+
+            # Test that G remains valid assignment matrix
+            @test all(sum(G; dims=1) .== 1)
+            @test size(G) == (K_clusters, T_instances)
+            @test nnz(G) == T_instances
+
+            # Test that loss doesn't increase
+            loss_after = eSPA.calc_loss(X_transposed, P, C, W, L, G, model.epsC, model.epsW, weights_random)
+            @test loss_after <= loss_before + 1e-10
+
+            # Test with epsC = 0.0
+            G_zero = copy(G_orig)
+            loss_before = eSPA.calc_loss(X_transposed, P, C, W, L, G_zero, 0.0, model.epsW, weights_random)
+
+            eSPA.update_G!(G_zero, X_transposed, P, C, W, L, 0.0, weights_random)
+
+            @test all(sum(G_zero; dims=1) .== 1)
+            @test size(G_zero) == (K_clusters, T_instances)
+            @test nnz(G_zero) == T_instances
+
+            loss_after = eSPA.calc_loss(X_transposed, P, C, W, L, G_zero, 0.0, model.epsW, weights_random)
+            @test loss_after <= loss_before + 1e-10
+        end
+
+        @testset "update_W! with random weights" begin
+            W_orig = copy(W)
+            loss_before = eSPA.calc_loss(
+                X_transposed, P, C, W, L, G, model.epsC, model.epsW, weights_random
+            )
+
+            eSPA.update_W!(W, X_transposed, C, G, model.epsW, weights_random)
+
+            # Test W remains a valid probability vector
+            @test all(W .>= 0)
+            @test sum(W) ≈ 1.0 atol = 1e-10
+
+            # Test that loss doesn't increase
+            loss_after = eSPA.calc_loss(X_transposed, P, C, W, L, G, model.epsC, model.epsW, weights_random)
+            @test loss_after <= loss_before + 1e-10
+
+            # Test with epsW = Inf
+            W_inf = fill(1.0 / D_features, D_features)
+            loss_before = eSPA.calc_loss(X_transposed, P, C, W_inf, L, G, model.epsC, Inf, weights_random)
+
+            eSPA.update_W!(W_inf, X_transposed, C, G, Inf, weights_random)
+
+            @test all(W_inf .>= 0)
+            @test sum(W_inf) ≈ 1.0 atol = 1e-10
+            @test all(W_inf .≈ 1.0 / D_features)
+
+            loss_after = eSPA.calc_loss(X_transposed, P, C, W_inf, L, G, model.epsC, Inf, weights_random)
+            @test loss_after <= loss_before + 1e-10
+        end
+
+        @testset "update_C! with random weights" begin
+            C_orig = copy(C)
+            loss_before = eSPA.calc_loss(
+                X_transposed, P, C, W, L, G, model.epsC, model.epsW, weights_random
+            )
+
+            eSPA.update_C!(C, X_transposed, G, weights_random)
+
+            # Test dimensions
+            @test size(C) == (D_features, K_clusters)
+
+            # Test that loss doesn't increase
+            loss_after = eSPA.calc_loss(X_transposed, P, C, W, L, G, model.epsC, model.epsW, weights_random)
+            @test loss_after <= loss_before + 1e-10
+
+            # Test with zero-weight clusters (edge case)
+            weights_zero = copy(weights_random)
+            weights_zero[G[1, :].nzind] .= 0.0  # Set weights in cluster 1 to zero
+            weights_zero ./= sum(weights_zero)  # Renormalize
+
+            C_zero = copy(C_orig)
+            @test_nowarn eSPA.update_C!(C_zero, X_transposed, G, weights_zero)
+            @test size(C_zero) == (D_features, K_clusters)
+            @test all(isfinite.(C_zero))
+        end
+
+        @testset "calc_loss with random weights" begin
+            loss_random = eSPA.calc_loss(X_transposed, P, C, W, L, G, model.epsC, model.epsW, weights_random)
+
+            @test isfinite(loss_random)
+            @test isa(loss_random, Float64)
+
+            # Test with different regularisation parameters
+            loss_zero = eSPA.calc_loss(X_transposed, P, C, W, L, G, 0.0, model.epsW, weights_random)
+            @test isfinite(loss_zero)
+            @test isa(loss_zero, Float64)
+
+            loss_inf = eSPA.calc_loss(X_transposed, P, C, W, L, G, model.epsC, Inf, weights_random)
+            @test isfinite(loss_inf)
+            @test isa(loss_inf, Float64)
+        end
+    end
+
+    @testset "11. Integration and Property Tests - Weighted" begin
+        # Train a model with weights using MLJ interface
+        model = eSPAClassifier(; K=K_clusters, epsC=1e-3, epsW=1e-1, random_state=42)
+        mach = MLJBase.machine(model, X_table, y_cat, weights_random)
+        MLJBase.fit!(mach; verbosity=0)
+        fitresult = mach.fitresult
+        report = MLJBase.report(mach)
+
+        @testset "Monotonic loss decrease" begin
+            loss = report.loss
+            iterations = report.iterations
+
+            # Test that loss is the correct length
+            @test length(loss) == iterations + 1
+
+            # Test overall decrease
+            @test loss[end] <= loss[1] + 1e-10
+
+            # Test that loss is monotonically decreasing
+            for i in 1:iterations
+                @test loss[i + 1] <= loss[i] + 1e-10
+            end
+        end
+
+        @testset "Matrix property preservation" begin
+            G = fitresult.G
+            C = fitresult.C
+            W = fitresult.W
+            L = fitresult.L
+            classes = fitresult.classes
+
+            # Test that G is a valid assignment matrix
+            @test all(sum(G; dims=1) .== 1)
+            @test size(G) == (K_clusters, T_instances)
+            @test nnz(G) == T_instances
+
+            # Test that C is a valid centroid matrix
+            @test size(C) == (D_features, K_clusters)
+
+            # Test that W is a valid probability vector
+            @test all(W .>= 0)
+            @test sum(W) ≈ 1.0 atol = 1e-10
+
+            # Test that L is a valid conditional probability matrix
+            @test all(L .>= 0)
+            @test all(sum(L; dims=1) .≈ 1.0)
+            @test size(L) == (M_classes, K_clusters)
+
+            # Test that the classes are correct
+            @test classes == MLJBase.classes(y_cat)
         end
     end
 end
