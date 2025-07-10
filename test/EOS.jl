@@ -215,8 +215,8 @@ end
     X_table, y_cat = MLJBase.make_blobs(
         T_instances, D_features; centers=K_clusters, cluster_std=1.0, rng=123, as_table=true
     )
-    model = eSPAClassifier(K=K_clusters, epsC=1e-3, epsW=1e-1, random_state=101)
-    eos_model = EOSWrapper(model; alpha=0.1, max_iter=100, tol=1e-6)
+    model = eSPAClassifier(K=K_clusters, epsC=0.0, epsW=1e-1, random_state=101)
+    eos_model = EOSWrapper(model; alpha=1.0, max_iter=100, tol=1e-6)
     mach = machine(eos_model, X_table, y_cat)
     fit!(mach, verbosity=0)
     rep = MLJBase.report(mach)

@@ -158,7 +158,6 @@ function MMI.predict(model::eSPAClassifier, fitresult::eSPAFitResult, X_mat)
     # TODO: store G_new in the report
     Pi_new, G_new = predict_proba(model, fitresult.C, fitresult.W, fitresult.L, X_mat)
     probabilities = transpose(Pi_new)
-    # TODO: do we also need to calculate new sample weights?
 
     return MMI.UnivariateFinite(fitresult.classes, probabilities)
 end
