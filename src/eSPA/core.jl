@@ -29,7 +29,7 @@ function initialise(
         else
             rand!(rng, W)
         end
-        normalise!(W)
+        EntropicLearning.normalise!(W)
     else
         fill!(W, Tf(1.0) / D_features)
     end
@@ -50,7 +50,7 @@ function initialise(
 
     # Initialise the conditional probability matrix
     L = rand(rng, Tf, M_classes, K_clusters)
-    left_stochastic!(L)
+    EntropicLearning.left_stochastic!(L)
 
     # Initialise the affiliation matrix
     G = sparse(
@@ -98,7 +98,7 @@ function update_G!(
         # For now the weights only modify the discretisation error
         prefactor = Tf(epsC / T_instances)  # TODO: modify this for weighted case
         LinearAlgebra.BLAS.gemm!(
-            'T', 'N', prefactor, safelog(L; tol=eps(Tf)), P, Tf(0.0), logLP
+            'T', 'N', prefactor, EntropicLearning.safelog(L; tol=eps(Tf)), P, Tf(0.0), logLP
         )
 
         # Subtract the classification error term from the discretisation error term
@@ -108,7 +108,7 @@ function update_G!(
     end
 
     # Update Γ
-    assign_closest!(G, disc_error)  # Updates G.rowval
+    EntropicLearning.assign_closest!(G, disc_error)  # Updates G.rowval
     return nothing
 end
 
@@ -161,7 +161,7 @@ function update_W!(
         end
 
         # Update W
-        softmax!(W, b; prefactor=Tf(epsW))
+        EntropicLearning.softmax!(W, b; prefactor=Tf(epsW))
     else
         # Set W to the uniform distribution
         fill!(W, Tf(1.0) / D_features)
@@ -210,7 +210,7 @@ function update_L!(
     mul!(L, P, G') # Λ = Π × Γ'
 
     # Normalise
-    left_stochastic!(L)
+    EntropicLearning.left_stochastic!(L)
     return nothing
 end
 
@@ -242,11 +242,11 @@ function calc_loss(
 
     # Calculate the classification error - TODO: include contribution from weights
     @inbounds LG = view(L, :, G.rowval)   # LG = Λ × Γ
-    class_error = Tf(epsC / T_instances) * cross_entropy(P, LG; tol=eps(Tf))
+    class_error = Tf(epsC / T_instances) * EntropicLearning.cross_entropy(P, LG; tol=eps(Tf))
 
     # Calculate the entropy term
     if isfinite(epsW)
-        entr_W = Tf(epsW) * entropy(W; tol=eps(Tf)) # Includes the minus sign
+        entr_W = Tf(epsW) * EntropicLearning.entropy(W; tol=eps(Tf)) # Includes the minus sign
     else
         entr_W = Tf(0.0)
     end
@@ -263,7 +263,7 @@ function update_P!(
     mul!(P, L, G)
 
     # Ensure Π is normalised
-    left_stochastic!(P)
+    EntropicLearning.left_stochastic!(P)
 
     return nothing
 end

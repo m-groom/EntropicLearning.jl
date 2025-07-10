@@ -14,9 +14,6 @@ using Statistics: mean, std
 using Tables
 import ..EntropicLearning
 
-# Include common functions - TODO: call from EntropicLearning instead
-include("../common/functions.jl")
-
 const MMI = MLJModelInterface
 
 export eSPAClassifier
@@ -139,7 +136,7 @@ function MMI.fit(
     end
 
     # Estimate the effective number of parameters
-    Deff = effective_dimension(W)
+    Deff = EntropicLearning.effective_dimension(W)
     n_params = Deff * (K_current + 1) + (M_classes - 1) * K_current
 
     # --- Return fitresult, cache and report ---

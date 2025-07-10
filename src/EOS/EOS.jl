@@ -7,10 +7,10 @@ using TimerOutputs
 import ..EntropicLearning
 
 # Include common functions - TODO: call from EntropicLearning instead
-include("../common/functions.jl")
+# include("../common/functions.jl")
 
 # Include EOS utility functions - TODO: call from EntropicLearning instead
-include("../utilities/eos.jl")
+# include("../utilities/eos.jl")
 
 const MMI = MLJModelInterface
 
@@ -234,11 +234,11 @@ function _fit(eos::EOSWrapper, verbosity::Int, X, y=nothing)
             )
 
             # w-step: Update weights using closed-form solution
-            @timeit to "update_weights" update_weights!(weights, distances, eos.alpha)
+            @timeit to "update_weights" EntropicLearning.update_weights!(weights, distances, eos.alpha)
 
             # Compute objective function for convergence check
             @timeit to "loss" loss[iter] =
-                dot(weights, distances) - eos.alpha * entropy(weights)
+                dot(weights, distances) - eos.alpha * EntropicLearning.entropy(weights)
 
             # Check if loss function has increased
             if iter > 1 && loss[iter] - loss[iter - 1] > eps(Tf)
@@ -263,7 +263,7 @@ function _fit(eos::EOSWrapper, verbosity::Int, X, y=nothing)
         iterations=iterations,
         loss=loss[1:iterations],
         timings=to,
-        ESS=effective_dimension(weights),
+        ESS=EntropicLearning.effective_dimension(weights),
         inner_report=inner_report,
     )
     cache = inner_cache

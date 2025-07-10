@@ -324,7 +324,7 @@ function get_eff(D::Ti, ε::Tf; normalise::Bool=true) where {Tf<:AbstractFloat,T
     @assert D >= 1 "D must be greater than or equal to 1"
     @assert ε > 0 "ε must be positive"
     # Return the generalised sigmoid function - normalised by default
-    f = 1 / D + (1 - 1 / D) / (1 + exp(-BETA * (safelog(ε) - GAMMA)))^ALPHA
+    f = 1 / D + (1 - 1 / D) / (1 + exp(-BETA * (EntropicLearning.safelog(ε) - GAMMA)))^ALPHA
     if normalise
         return f
     else
