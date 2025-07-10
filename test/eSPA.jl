@@ -768,40 +768,25 @@ end
 
         @testset "predict_proba tests" begin
             X_test = X_transposed[:, 1:10]
-            # Test with iterative_pred = false
             P_test, _ = eSPA.predict_proba(model, fitresult.C, fitresult.W, fitresult.L, X_test)
             @test size(P_test) == (M_classes, 10)
             @test all(sum(P_test; dims=1) .≈ 1.0)
             @test all(P_test .>= 0)
 
-            # Test with iterative_pred = true
-            model_iter_pred = eSPAClassifier(;
-                K=K_clusters, iterative_pred=true, random_state=42
-            )
-            P_iter, _ = eSPA.predict_proba(
-                model_iter_pred, fitresult.C, fitresult.W, fitresult.L, X_test
-            )
-            @test size(P_iter) == (M_classes, 10)
-            @test all(sum(P_iter; dims=1) .≈ 1.0)
-            @test all(P_iter .>= 0)
-
             # Test reproducibility
-            for iterative_pred in [true, false]
-                model_repro = eSPAClassifier(;
-                    K=K_clusters, iterative_pred=iterative_pred, random_state=123
-                )
-                P1, _ = eSPA.predict_proba(
-                    model_repro, fitresult.C, fitresult.W, fitresult.L, X_test
-                )
-
-                model_repro2 = eSPAClassifier(;
-                    K=K_clusters, iterative_pred=iterative_pred, random_state=123
-                )
-                P2, _ = eSPA.predict_proba(
-                    model_repro2, fitresult.C, fitresult.W, fitresult.L, X_test
-                )
-                @test P1 ≈ P2
-            end
+            model_repro = eSPAClassifier(;
+                K=K_clusters, random_state=123
+            )
+            P1, _ = eSPA.predict_proba(
+                model_repro, fitresult.C, fitresult.W, fitresult.L, X_test
+            )
+            model_repro2 = eSPAClassifier(;
+                K=K_clusters, random_state=123
+            )
+            P2, _ = eSPA.predict_proba(
+                model_repro2, fitresult.C, fitresult.W, fitresult.L, X_test
+            )
+            @test P1 ≈ P2
 
             # Test single instance prediction
             X_single = X_transposed[:, 1:1]
@@ -832,40 +817,18 @@ end
                 @test sum_pred ≈ 1.0 atol = 1e-10
             end
 
-            # Test with iterative prediction
-            model_iter = eSPAClassifier(;
-                K=K_clusters, iterative_pred=true, random_state=42
-            )
-            mach_iter = MLJBase.machine(model_iter, X_table, y_cat)
-            MLJBase.fit!(mach_iter; verbosity=0)
-
-            y_pred_iter = MLJBase.predict(mach_iter, X_test)
-            @test length(y_pred_iter) == 10
-            # Test that each prediction is a valid probability distribution
-            for pred in y_pred_iter
-                sum_pred = 0.0
-                for m in MLJBase.classes(pred)
-                    prob = MLJBase.pdf(pred, m)
-                    @test prob >= 0.0
-                    sum_pred += prob
-                end
-                @test sum_pred ≈ 1.0 atol = 1e-10
-            end
-
             # Test single instance prediction and empty matrix prediction
             X_single = MLJBase.selectrows(X_table, 1:1)
             X_empty = MLJBase.selectrows(X_table, 1:0)
-            for ma in [mach, mach_iter]
-                y_pred_single = MLJBase.predict(ma, X_single)
-                @test length(y_pred_single) == 1
-                @test MLJBase.classes(y_pred_single) == MLJBase.classes(y_cat)
-                probs = MLJBase.pdf(y_pred_single, MLJBase.classes(y_pred_single))
-                @test all(probs .>= 0)
-                @test sum(probs) ≈ 1.0 atol = 1e-10
-                y_pred_empty = MLJBase.predict(ma, X_empty)
-                @test length(y_pred_empty) == 0
-                @test MLJBase.classes(y_pred_empty) == MLJBase.classes(y_cat)
-            end
+            y_pred_single = MLJBase.predict(mach, X_single)
+            @test length(y_pred_single) == 1
+            @test MLJBase.classes(y_pred_single) == MLJBase.classes(y_cat)
+            probs = MLJBase.pdf(y_pred_single, MLJBase.classes(y_pred_single))
+            @test all(probs .>= 0)
+            @test sum(probs) ≈ 1.0 atol = 1e-10
+            y_pred_empty = MLJBase.predict(mach, X_empty)
+            @test length(y_pred_empty) == 0
+            @test MLJBase.classes(y_pred_empty) == MLJBase.classes(y_cat)
         end
     end
 
@@ -944,45 +907,15 @@ end
         end
 
         @testset "Reproducible affiliations" begin
-            # Test unbias=true case
-            model_unbias = eSPAClassifier(;
-                K=K_clusters, epsC=1e-3, epsW=1e-1, unbias=true, random_state=42
-            )
-            mach_unbias = MLJBase.machine(model_unbias, X_table, y_cat)
-            MLJBase.fit!(mach_unbias; verbosity=0)
-            fitresult_unbias = mach_unbias.fitresult
-
+            # Test unbiasing
             _, G_unbias = eSPA.predict_proba(
-                model_unbias,
-                fitresult_unbias.C,
-                fitresult_unbias.W,
-                fitresult_unbias.L,
+                model,
+                fitresult.C,
+                fitresult.W,
+                fitresult.L,
                 X_transposed,
             )
-            @test G_unbias == fitresult_unbias.G
-
-            # Test unbias=true + iterative_pred=true case
-            model_iter = eSPAClassifier(;
-                K=K_clusters,
-                epsC=1e-3,
-                epsW=1e-1,
-                max_iter=5,
-                unbias=true,
-                iterative_pred=true,
-                random_state=42,
-            )
-            mach_iter = MLJBase.machine(model_iter, X_table, y_cat)
-            MLJBase.fit!(mach_iter; verbosity=0)
-            fitresult_iter = mach_iter.fitresult
-
-            _, G_iter = eSPA.predict_proba(
-                model_iter,
-                fitresult_iter.C,
-                fitresult_iter.W,
-                fitresult_iter.L,
-                X_transposed,
-            )
-            @test G_iter == fitresult_iter.G
+            @test G_unbias == fitresult.G
         end
     end
 

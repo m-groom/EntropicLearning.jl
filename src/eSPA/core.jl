@@ -293,7 +293,7 @@ function predict_proba(
         T_instances,
     )
     P = Matrix{Tf}(undef, M_classes, T_instances)
-    weights = fill(Tf(1 / T_instances), T_instances) # TODO: do we need to predict these?
+    weights = fill(Tf(1 / T_instances), T_instances)
 
     # Update Γ
     update_G!(G, X, P, C, W, L, Tf(0.0), weights)
@@ -301,49 +301,8 @@ function predict_proba(
     # Update Π
     update_P!(P, L, G)
 
-    if model.iterative_pred
-        iterative_predict!(P, G, model, X, C, W, L, weights)
-    end
-
     # Return Π
     return P, G
-end
-
-# Iterative prediction function - TODO: remove
-function iterative_predict!(
-    P::AbstractMatrix{Tf},
-    G::SparseMatrixCSC{Bool,Int},
-    model::eSPAClassifier,
-    X::AbstractMatrix{Tf},
-    C::AbstractMatrix{Tf},
-    W::AbstractVector{Tf},
-    L::AbstractMatrix{Tf},
-    weights::AbstractVector{Tf};
-    verbosity::Int=0,
-) where {Tf<:AbstractFloat}
-    iter = 0                                # Iteration counter
-    loss = fill(Tf(Inf), model.max_iter + 1)    # Loss for each iteration
-    loss[1] = calc_loss(X, P, C, W, L, G, model.epsC, model.epsW, weights)
-    while !converged(loss, iter, model.max_iter, model.tol)
-        # Update iteration counter
-        iter += 1
-
-        # Update Γ
-        update_G!(G, X, P, C, W, L, model.epsC, weights)
-
-        # Update Π
-        update_P!(P, L, G)
-
-        # Calculate the loss
-        loss[iter + 1] = calc_loss(X, P, C, W, L, G, model.epsC, model.epsW, weights)
-
-        # Check if loss function has increased
-        check_loss(loss, iter, verbosity; context="iterative prediction")
-    end
-
-    # Warn if the maximum number of iterations was reached
-    check_iter(iter, model.max_iter, verbosity; context="iterative prediction")
-    return nothing
 end
 
 # Function to check for convergence

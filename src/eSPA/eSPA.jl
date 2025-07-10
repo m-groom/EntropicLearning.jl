@@ -27,8 +27,6 @@ MMI.@mlj_model mutable struct eSPAClassifier <: MMI.Probabilistic
     epsW::Float64 = 1e-1::(_ > 0.0)
     kpp_init::Bool = true::(_ in (true, false))
     mi_init::Bool = true::(_ in (true, false))
-    iterative_pred::Bool = false::(_ in (true, false))
-    unbias::Bool = false::(_ in (true, false))
     max_iter::Int = 200::(_ > 0)
     tol::Float64 = 1e-8::(_ > 0.0)
     random_state::Union{AbstractRNG,Integer} = Random.default_rng()
@@ -126,28 +124,18 @@ function MMI.fit(
 
     # --- Unbiasing step ---
     @timeit to "Unbias" begin
-        if model.unbias # TODO: make this non-optional
-            # Unbias Γ
-            update_G!(G, X_mat, Pi_mat, C, W, L, Tf(0.0), weights)
+        # Unbias Γ
+        update_G!(G, X_mat, Pi_mat, C, W, L, Tf(0.0), weights)
 
-            if model.iterative_pred
-                P = Matrix{Tf}(undef, M_classes, T_instances)
-                update_P!(P, L, G)
-                iterative_predict!(P, G, model, X_mat, C, W, L, weights; verbosity=verbosity)
-            end
-
-            # Discard empty boxes
-            notEmpty, K_new = find_empty(G)
-            if K_new < K_current
-                C, L, G = remove_empty(C, L, G, notEmpty)
-                K_current = copy(K_new)
-            end
-
-            if !model.iterative_pred
-                # Unbias Λ
-                update_L!(L, Pi_mat, G)
-            end
+        # Discard empty boxes
+        notEmpty, K_new = find_empty(G)
+        if K_new < K_current
+            C, L, G = remove_empty(C, L, G, notEmpty)
+            K_current = copy(K_new)
         end
+
+        # Unbias Λ
+        update_L!(L, Pi_mat, G)
     end
 
     # Estimate the effective number of parameters
@@ -246,12 +234,6 @@ Train the machine with `fit!(mach, rows=...)`.
 - `mi_init::Bool = true`: If `true`, feature weights `W` are initialised using the mutual
   information between features and classes. If `false`, they are initialised randomly and
   then normalised.
-
-- `iterative_pred::Bool = false`: If `true`, performs iterative refinement of cluster assignments
-  during the prediction phase.
-
-- `unbias::Bool = false`: If `true`, performs an unbiasing step after the main optimisation loop to
-  recalculate cluster assignments without the influence of `epsC`.
 
 - `max_iter::Int = 200`: Maximum number of iterations for the main optimisation loop.
 
