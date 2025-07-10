@@ -119,12 +119,9 @@ Calculate EOS weights for data (X, [y]) using a fitted model.
 - Vector of weights in [0,1] that sum to 1
 
 """
-function calculate_eos_weights(model, fitresult, alpha::Real, X, y=nothing)
-    distances = if MLJModelInterface.is_supervised(model)
-        eos_distances(model, fitresult, X, y)
-    else
-        eos_distances(model, fitresult, X)
-    end
+function calculate_eos_weights(model, fitresult, alpha::Real, args...)
+    model_args = MLJModelInterface.reformat(model, args...)
+    distances = eos_distances(model, fitresult, model_args...)
     return eos_weights(distances, alpha)
 end
 
@@ -145,9 +142,9 @@ Higher scores indicate more outlying samples.
 # Returns
 - Vector of outlier scores in (0,1]
 """
-function eos_outlier_scores(model, fitresult, alpha::Real, X, y=nothing)
-    weights = calculate_eos_weights(model, fitresult, alpha, X, y)
-    return exp.(-length(weights) .* weights)
+function eos_outlier_scores(model, fitresult, alpha::Real, args...)
+    weights = calculate_eos_weights(model, fitresult, alpha, args...)
+    return outlier_scores(weights)
 end
 
 """
@@ -244,15 +241,11 @@ function calculate_eos_weights(
     fitresult,
     alpha_range::Tuple{<:Real,<:Real},
     target_Deff::Real,
-    X,
-    y=nothing;
+    args...;
     kwargs...,
 )
-    distances = if MLJModelInterface.is_supervised(model)
-        eos_distances(model, fitresult, X, y)
-    else
-        eos_distances(model, fitresult, X)
-    end
+    model_args = MLJModelInterface.reformat(model, args...)
+    distances = eos_distances(model, fitresult, model_args...)
 
     return eos_weights(distances, alpha_range, target_Deff; kwargs...)
 end
@@ -287,15 +280,17 @@ function eos_outlier_scores(
     fitresult,
     alpha_range::Tuple{<:Real,<:Real},
     target_Deff::Real,
-    X,
-    y=nothing;
+    args...;
     kwargs...,
 )
     # Find the appropriate weights and alpha by calling the corresponding eos_weights function.
-    result = calculate_eos_weights(
-        model, fitresult, X, alpha_range, target_Deff; y=y, kwargs...
-    )
+    result = calculate_eos_weights(model, fitresult, alpha_range, target_Deff, args...; kwargs...)
 
     # Calculate outlier scores and return with the found alpha.
-    return (scores=exp.(-length(result.weights) .* result.weights), alpha=result.alpha)
+    return (scores=outlier_scores(result.weights), alpha=result.alpha)
+end
+
+# Helper function to get outlier scores from weights
+function outlier_scores(weights::AbstractVector{<:Real})
+    return exp.(-length(weights) .* weights)
 end

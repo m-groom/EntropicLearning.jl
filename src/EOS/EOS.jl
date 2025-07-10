@@ -217,6 +217,10 @@ function _fit(eos::EOSWrapper, verbosity::Int, X, y=nothing)
     # Prepare arguments for fitting the inner model
     fit_args = (args..., weights)
 
+    X_mat = args[1]
+    y_int = args[2]
+    Pi_mat = EntropicLearning.eSPA.get_pi(y_int, length(classes(y)))
+
     # --- Main Optimisation Loop ---
     @timeit to "Training" begin
         for iter in 1:eos.max_iter
@@ -236,9 +240,13 @@ function _fit(eos::EOSWrapper, verbosity::Int, X, y=nothing)
             # w-step: Update weights using closed-form solution
             @timeit to "update_weights" EntropicLearning.update_weights!(weights, distances, eos.alpha)
 
+            eSPA_loss = EntropicLearning.eSPA.calc_loss(
+                X_mat, Pi_mat, inner_fitresult.C, inner_fitresult.W, inner_fitresult.L, inner_fitresult.G, eos.model.epsC, eos.model.epsW, weights
+            )
+
             # Compute objective function for convergence check
-            @timeit to "loss" loss[iter] =
-                dot(weights, distances) - eos.alpha * EntropicLearning.entropy(weights)
+            @timeit to "loss" loss[iter] = eSPA_loss - eos.alpha * EntropicLearning.entropy(weights)
+                # dot(weights, distances) - eos.alpha * EntropicLearning.entropy(weights)
 
             # Check if loss function has increased
             if iter > 1 && loss[iter] - loss[iter - 1] > eps(Tf)
@@ -279,10 +287,10 @@ end
 # TODO: modify so that weights also include distances from training data
 function MMI.transform(eos::EOSWrapper, fitresult::EOSFitResult, Xnew)
     # Reformat new data for the wrapped model
-    args = MMI.reformat(eos.model, Xnew) # Assume first argument is the data matrix
+    # args = MMI.reformat(eos.model, Xnew) # Assume first argument is the data matrix
     # TODO: call root-finding method instead?
     return EntropicLearning.calculate_eos_weights(
-        eos.model, fitresult.inner_fitresult, eos.alpha, args[1]
+        eos.model, fitresult.inner_fitresult, eos.alpha, Xnew
     )
 end
 
@@ -303,7 +311,6 @@ end
 
 function MMI.fitted_params(eos::EOSWrapper, fitresult::EOSFitResult)
     return (
-        alpha=fitresult.alpha,
         weights=fitresult.weights,
         inner_fitted_params=MMI.fitted_params(eos.model, fitresult.inner_fitresult),
     )

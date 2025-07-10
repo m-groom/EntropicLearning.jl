@@ -4,6 +4,7 @@ using MLJBase
 using Random
 using Statistics
 using LinearAlgebra
+using MLJModelInterface
 
 # Test data helper function
 function create_test_distances(n=10; outlier_ratio=0.1)
@@ -120,289 +121,244 @@ end
         end
     end
 
-    # @testset "calculate_eos_weights function" begin
-    #     # Create test model and data
-    #     X, y = make_blobs(100, 3; centers=3, cluster_std=1.0, rng=123)
-    #     model = eSPAClassifier(K=3)
-    #     mach = fit!(machine(model, X, y), verbosity=0)
+    @testset "calculate_eos_weights function" begin
+        # Create test model and data
+        X, y = make_blobs(100, 3; centers=3, cluster_std=1.0, rng=123)
+        model = eSPAClassifier(K=3)
+        mach = fit!(machine(model, X, y), verbosity=0)
 
-    #     @testset "Basic functionality" begin
-    #         alpha = 1.0
-    #         weights = calculate_eos_weights(model, mach.fitresult, alpha, X, y)
+        @testset "Basic functionality" begin
+            alpha = 1.0
+            weights = calculate_eos_weights(model, mach.fitresult, alpha, X, y)
 
-    #         @test length(weights) == size(X, 1)
-    #         @test all(weights .>= 0)
-    #         @test isapprox(sum(weights), 1.0, atol=1e-10)
-    #     end
+            @test length(weights) == nrows(X)
+            @test all(weights .>= 0)
+            @test isapprox(sum(weights), 1.0, atol=1e-10)
+        end
 
-    #     @testset "With target effective dimension" begin
-    #         alpha_range = (0.1, 10.0)
-    #         target_Deff = 0.6
+        @testset "With target effective dimension" begin
+            alpha_range = (0.1, 10.0)
+            target_Deff = 0.6
 
-    #         result = calculate_eos_weights(model, mach.fitresult, alpha_range, target_Deff, X, y)
-    #         weights, found_alpha = result.weights, result.alpha
+            result = calculate_eos_weights(model, mach.fitresult, alpha_range, target_Deff, X, y)
+            weights, found_alpha = result.weights, result.alpha
 
-    #         @test length(weights) == size(X, 1)
-    #         @test all(weights .>= 0)
-    #         @test isapprox(sum(weights), 1.0, atol=1e-10)
-    #         @test alpha_range[1] <= found_alpha <= alpha_range[2]
-    #     end
-    # end
+            @test length(weights) == nrows(X)
+            @test all(weights .>= 0)
+            @test isapprox(sum(weights), 1.0, atol=1e-10)
+            @test alpha_range[1] <= found_alpha <= alpha_range[2]
+        end
+    end
 
-    # @testset "eos_outlier_scores function" begin
-    #     # Create test model and data
-    #     X, y = make_blobs(100, 3; centers=3, cluster_std=1.0, rng=123)
-    #     model = eSPAClassifier(K=5)
-    #     mach = fit!(machine(model, X, y), verbosity=0)
+    @testset "eos_outlier_scores function" begin
+        # Create test model and data
+        X, y = make_blobs(100, 3; centers=3, cluster_std=1.0, rng=123)
+        model = eSPAClassifier(K=3)
+        mach = fit!(machine(model, X, y), verbosity=0)
 
-    #     @testset "Basic functionality" begin
-    #         alpha = 1.0
-    #         scores = eos_outlier_scores(model, mach.fitresult, alpha, X, y)
+        @testset "Basic functionality" begin
+            alpha = 1.0
+            scores = eos_outlier_scores(model, mach.fitresult, alpha, X, y)
 
-    #         @test length(scores) == size(X, 1)
-    #         @test all(0 .<= scores .<= 1)
-    #         @test minimum(scores) ≈ 0.0
-    #         @test maximum(scores) ≈ 1.0
-    #     end
+            @test length(scores) == nrows(X)
+            @test all(0 .<= scores .<= 1)
+        end
 
-    #     @testset "With target effective dimension" begin
-    #         alpha_range = (0.1, 10.0)
-    #         target_Deff = 0.6
+        @testset "With target effective dimension" begin
+            alpha_range = (0.1, 10.0)
+            target_Deff = 0.6
 
-    #         result = eos_outlier_scores(model, mach.fitresult, alpha_range, target_Deff, X, y)
-    #         scores, found_alpha = result.scores, result.alpha
+            result = eos_outlier_scores(model, mach.fitresult, alpha_range, target_Deff, X, y)
+            scores, found_alpha = result.scores, result.alpha
 
-    #         @test length(scores) == size(X, 1)
-    #         @test all(0 .<= scores .<= 1)
-    #         @test minimum(scores) ≈ 0.0
-    #         @test maximum(scores) ≈ 1.0
-    #         @test alpha_range[1] <= found_alpha <= alpha_range[2]
-    #     end
-    # end
+            @test length(scores) == nrows(X)
+            @test all(0 .<= scores .<= 1)
+            @test alpha_range[1] <= found_alpha <= alpha_range[2]
+        end
+    end
 
     @testset "eos_distances protocol" begin
         @testset "Default error behavior" begin
-            struct DummyModel end
+            struct DummyModel <: MLJBase.Unsupervised end
             dummy_model = DummyModel()
 
             @test_throws ErrorException eos_distances(dummy_model, nothing, [1, 2, 3])
         end
 
-        # @testset "eSPAClassifier implementation" begin
-        #     X, y = make_blobs(50, 3; centers=3, cluster_std=1.0, rng=123)
-        #     model = eSPAClassifier(K=5)
-        #     mach = fit!(machine(model, X, y), verbosity=0)
+        @testset "eSPAClassifier implementation" begin
+            X, y = make_blobs(50, 3; centers=3, cluster_std=1.0, rng=123)
+            model = eSPAClassifier(K=3)
+            mach = fit!(machine(model, X, y), verbosity=0)
 
-        #     # Create extended fitresult with G from report (needed for eos_distances)
-        #     extended_fitresult = (
-        #         C=mach.fitresult.C,
-        #         W=mach.fitresult.W,
-        #         L=mach.fitresult.L,
-        #         classes=mach.fitresult.classes,
-        #         G=mach.report.G
-        #     )
+            # Test with y provided (training case)
+            args = MLJModelInterface.reformat(model, X, y)
+            distances_train = eos_distances(model, mach.fitresult, args...)
+            @test length(distances_train) == nrows(X)
+            @test all(distances_train .>= 0)
 
-        #     # Test with y provided (training case)
-        #     X_mat = MLJBase.matrix(X; transpose=true)  # eSPA expects D×T format
-        #     distances_train = eos_distances(model, extended_fitresult, X_mat, y)
-        #     @test length(distances_train) == size(X, 1)
-        #     @test all(distances_train .>= 0)
-
-        #     # Test without y (transform case)
-        #     distances_transform = eos_distances(model, extended_fitresult, X_mat)
-        #     @test length(distances_transform) == size(X, 1)
-        #     @test all(distances_transform .>= 0)
-        # end
+            # Test without y (predict case)
+            args = MLJModelInterface.reformat(model, X)
+            distances_predict = eos_distances(model, mach.fitresult, args...)
+            @test length(distances_predict) == nrows(X)
+            @test all(distances_predict .>= 0)
+        end
     end
 end
 
-# @testset "EOS Wrapper" begin
+@testset "EOS Wrapper" begin
 
-#     @testset "Constructor and validation" begin
+    # Test data generation
+    D_features = 3
+    T_instances = 100
+    K_clusters = 3
+    # Data in MLJ format
+    X_table, y_cat = MLJBase.make_blobs(
+        T_instances, D_features; centers=K_clusters, cluster_std=1.0, rng=123, as_table=true
+    )
+    model = eSPAClassifier(K=K_clusters, epsC=1e-3, epsW=1e-1, random_state=101)
+    eos_model = EOSWrapper(model; alpha=0.1, max_iter=100, tol=1e-6)
+    mach = machine(eos_model, X_table, y_cat)
+    fit!(mach, verbosity=0)
+    rep = MLJBase.report(mach)
 
-#         @testset "Valid construction" begin
-#             model = eSPAClassifier(K=5)
+    @testset "Constructor and validation" begin
 
-#             # Positional argument
-#             eos1 = EOSWrapper(model)
-#             @test eos1.model isa eSPAClassifier
-#             @test eos1.alpha == 1.0
-#             @test eos1.tol == 1e-6
-#             @test eos1.max_iter == 100
+        @testset "Valid construction" begin
+            model = eSPAClassifier(K=5)
 
-#             # Keyword argument
-#             eos2 = EOSWrapper(; model=model, alpha=2.0, tol=1e-5, max_iter=50)
-#             @test eos2.model isa eSPAClassifier
-#             @test eos2.alpha == 2.0
-#             @test eos2.tol == 1e-5
-#             @test eos2.max_iter == 50
-#         end
+            # Positional argument
+            eos1 = EOSWrapper(eSPAClassifier(K=5), alpha=0.1, tol=1e-6, max_iter=200)
+            @test eos1.model isa eSPAClassifier
+            @test eos1.alpha == 0.1
+            @test eos1.tol == 1e-6
+            @test eos1.max_iter == 200
 
-#         @testset "Error handling" begin
-#             model = eSPAClassifier(K=5)
+            # Keyword argument
+            eos2 = EOSWrapper(; model=eSPAClassifier(K=5), alpha=2.0, tol=1e-5, max_iter=50)
+            @test eos2.model isa eSPAClassifier
+            @test eos2.alpha == 2.0
+            @test eos2.tol == 1e-5
+            @test eos2.max_iter == 50
+        end
 
-#             # Invalid parameters
-#             @test_throws ArgumentError EOSWrapper(model; alpha=0.0)
-#             @test_throws ArgumentError EOSWrapper(model; tol=0.0)
-#             @test_throws ArgumentError EOSWrapper(model; max_iter=0)
+        @testset "Error handling" begin
+            test_model = eSPAClassifier(K=5)
 
-#             # Too many positional arguments
-#             @test_throws ArgumentError EOSWrapper(model, model)
+            # Invalid parameters
+            @test_throws ArgumentError EOSWrapper(test_model; alpha=0.0)
+            @test_throws ArgumentError EOSWrapper(test_model; tol=0.0)
+            @test_throws ArgumentError EOSWrapper(test_model; max_iter=0)
 
-#             # No model provided
-#             @test_throws ArgumentError EOSWrapper(; alpha=1.0)
-#         end
+            # Too many positional arguments
+            @test_throws ArgumentError EOSWrapper(test_model, test_model)
 
-#         @testset "Wrapper type selection" begin
-#             # Test probabilistic wrapper for eSPAClassifier
-#             model = eSPAClassifier(K=5)
-#             eos = EOSWrapper(model)
-#             @test eos isa EntropicLearning.EOS.ProbabilisticEOSWrapper
-#         end
-#     end
+            # No model provided
+            @test_throws ArgumentError EOSWrapper(; alpha=1.0)
+        end
 
-#     @testset "MLJ integration" begin
+        @testset "Wrapper type selection" begin
+            # Test probabilistic wrapper for eSPAClassifier
+            eos = EOSWrapper(eSPAClassifier(K=5))
+            @test eos isa EntropicLearning.EOS.ProbabilisticEOSWrapper
+        end
+    end
 
-#         @testset "Basic fitting and prediction" begin
-#             # Create test data with some outliers
-#             Random.seed!(123)
-#             X, y = make_blobs(100, 5; centers=3, cluster_std=1.0, rng=123)
+    @testset "MLJ integration" begin
 
-#             # Create EOS-wrapped model
-#             model = eSPAClassifier(K=8)
-#             eos_model = EOSWrapper(model; alpha=1.0, max_iter=5)
+        @testset "Basic fitting and prediction" begin
+            # Check fitresult structure
+            @test mach.fitresult isa EntropicLearning.EOS.EOSFitResult
+            weights = mach.fitresult.weights
+            @test length(weights) == nrows(X_table)
+            @test all(weights .>= 0)
+            @test isapprox(sum(weights), 1.0, atol=1e-10)
 
-#             # NOTE: This test will fail because eSPAClassifier doesn't support weights yet
-#             # That's expected - we're preparing the tests for when weights are implemented
-#             @test_throws MethodError begin
-#                 mach = fit!(machine(eos_model, X, y), verbosity=0)
+            # Check report
+            @test haskey(rep, :iterations)
+            @test haskey(rep, :loss)
+            @test haskey(rep, :ESS)
+            @test haskey(rep, :timings)
 
-#                 # Check fitresult structure
-#                 @test mach.fitresult isa EntropicLearning.EOS.EOSFitResult
-#                 @test length(mach.fitresult.weights) == size(X, 1)
-#                 @test all(mach.fitresult.weights .>= 0)
-#                 @test isapprox(sum(mach.fitresult.weights), 1.0, atol=1e-10)
+            # Test prediction
+            X_test, _ = make_blobs(10, D_features; centers=K_clusters, cluster_std=1.0, rng=456)
+            ŷ = predict(mach, X_test)
+            @test length(ŷ) == nrows(X_test)
 
-#                 # Check report
-#                 @test haskey(mach.report, :iterations)
-#                 @test haskey(mach.report, :loss)
-#                 @test haskey(mach.report, :ESS)
-#                 @test haskey(mach.report, :timings)
+            # Test transform (outlier scores)
+            scores = transform(mach, X_test)
+            @test length(scores) == nrows(X_test)
+            @test all(0 .<= scores .<= 1)
+        end
 
-#                 # Test prediction
-#                 X_test, _ = make_blobs(10, 5; centers=3, cluster_std=1.0, rng=456)
-#                 ŷ = predict(mach, X_test)
-#                 @test length(ŷ) == size(X_test, 1)
+        @testset "Convergence behavior" begin
+            # Check that loss is decreasing
+            losses = rep.loss
+            if length(losses) > 1
+                # Allow for small numerical increases
+                for i in 2:length(losses)
+                    @test losses[i] - losses[i-1] <= 1e-10
+                end
+            end
+        end
 
-#                 # Test transform (outlier scores)
-#                 scores = transform(mach, X_test)
-#                 @test length(scores) == size(X_test, 1)
-#                 @test all(0 .<= scores .<= 1)
-#             end
-#         end
+        @testset "Fitted parameters" begin
+            fitted_params = MLJBase.fitted_params(mach)
 
-#         @testset "Convergence behavior" begin
-#             Random.seed!(123)
-#             X, y = make_blobs(50, 3; centers=3, cluster_std=1.0, rng=123)
+            @test haskey(fitted_params, :weights)
+            @test haskey(fitted_params, :inner_fitted_params)
+            @test length(fitted_params.weights) == nrows(X_table)
+        end
 
-#             model = eSPAClassifier(K=5)
-#             eos_model = EOSWrapper(model; alpha=1.0, max_iter=10, tol=1e-8)
+        @testset "Different alpha values" begin
+            # Test with small alpha (more concentrated weights)
+            eos_small = EOSWrapper(model; alpha=0.1, max_iter=5)
+            mach_small = fit!(machine(eos_small, X_table, y_cat), verbosity=0)
 
-#             # NOTE: This test will fail because eSPAClassifier doesn't support weights yet
-#             @test_throws MethodError begin
-#                 mach = fit!(machine(eos_model, X, y), verbosity=0)
+            # Test with large alpha (more uniform weights)
+            eos_large = EOSWrapper(model; alpha=10.0, max_iter=5)
+            mach_large = fit!(machine(eos_large, X_table, y_cat), verbosity=0)
 
-#                 # Check that loss is decreasing (or at least not increasing significantly)
-#                 losses = mach.report.loss
-#                 if length(losses) > 1
-#                     # Allow for small numerical increases
-#                     for i in 2:length(losses)
-#                         @test losses[i] - losses[i-1] <= 1e-10
-#                     end
-#                 end
-#             end
-#         end
+            # Large alpha should lead to more uniform weights (higher entropy)
+            entropy_small = EntropicLearning.entropy(mach_small.fitresult.weights)
+            entropy_large = EntropicLearning.entropy(mach_large.fitresult.weights)
 
-#         @testset "Fitted parameters" begin
-#             Random.seed!(123)
-#             X, y = make_blobs(30, 3; centers=3, cluster_std=1.0, rng=123)
+            @test entropy_small < entropy_large
+        end
+    end
 
-#             model = eSPAClassifier(K=5)
-#             eos_model = EOSWrapper(model; alpha=1.0)
+    @testset "Outlier detection capability" begin
+        # Create clean data
+        X_clean, y_clean = make_blobs(80, D_features; centers=K_clusters, cluster_std=0.5, rng=123, as_table=false)
 
-#             # NOTE: This test will fail because eSPAClassifier doesn't support weights yet
-#             @test_throws MethodError begin
-#                 mach = fit!(machine(eos_model, X, y), verbosity=0)
-#                 fitted_params = MLJBase.fitted_params(mach)
+        # Add obvious outliers
+        X_outliers = randn(20, D_features) * 5  # Large values, far from clusters
+        y_outliers = rand(1:3, 20)     # Random class labels
 
-#                 @test haskey(fitted_params, :weights)
-#                 @test haskey(fitted_params, :inner_fitted_params)
-#                 @test length(fitted_params.weights) == size(X, 1)
-#             end
-#         end
+        X = MLJBase.table(vcat(X_clean, X_outliers))
+        y = MLJBase.categorical(vcat(y_clean, y_outliers))
 
-#         @testset "Different alpha values" begin
-#             Random.seed!(123)
-#             X, y = make_blobs(50, 3; centers=3, cluster_std=1.0, rng=123)
+        # Fit EOS model
+        eos_model = EOSWrapper(model; alpha=1.0, max_iter=100)
+        mach = fit!(machine(eos_model, X, y), verbosity=0)
 
-#             # NOTE: These tests will fail because eSPAClassifier doesn't support weights yet
-#             @test_throws MethodError begin
-#                 # Test with small alpha (more uniform weights)
-#                 eos_small = EOSWrapper(eSPAClassifier(K=5); alpha=0.1, max_iter=5)
-#                 mach_small = fit!(machine(eos_small, X, y), verbosity=0)
+        # Get outlier scores
+        scores = EntropicLearning.outlier_scores(transform(mach, X))
 
-#                 # Test with large alpha (more concentrated weights)
-#                 eos_large = EOSWrapper(eSPAClassifier(K=5); alpha=10.0, max_iter=5)
-#                 mach_large = fit!(machine(eos_large, X, y), verbosity=0)
+        # Outliers should have higher scores
+        clean_scores = scores[1:80]
+        outlier_scores = scores[81:100]
 
-#                 # Small alpha should lead to more uniform weights (higher entropy)
-#                 entropy_small = -sum(mach_small.fitresult.weights .* log.(mach_small.fitresult.weights .+ 1e-10))
-#                 entropy_large = -sum(mach_large.fitresult.weights .* log.(mach_large.fitresult.weights .+ 1e-10))
+        @test mean(outlier_scores) > mean(clean_scores)
+        @test maximum(outlier_scores) > 0.5  # At least some outliers should be clearly identified
+    end
 
-#                 @test entropy_small > entropy_large
-#             end
-#         end
-#     end
+    @testset "Model compatibility check" begin
+        # Test that EOSWrapper rejects models that don't support weights
+        struct DummyUnsupportedModel end
+        MLJModelInterface.is_supervised(::Type{DummyUnsupportedModel}) = true
+        MLJModelInterface.supports_weights(::Type{DummyUnsupportedModel}) = false
 
-#     @testset "Outlier detection capability" begin
-#         Random.seed!(123)
-
-#         # Create clean data
-#         X_clean, y_clean = make_blobs(80, 3; centers=3, cluster_std=0.5, rng=123)
-
-#         # Add obvious outliers
-#         X_outliers = randn(20, 3) * 5  # Large values, far from clusters
-#         y_outliers = rand(1:3, 20)     # Random class labels
-
-#         X = vcat(X_clean, X_outliers)
-#         y = vcat(y_clean, y_outliers)
-
-#         # NOTE: This test will fail because eSPAClassifier doesn't support weights yet
-#         @test_throws MethodError begin
-#             # Fit EOS model
-#             model = eSPAClassifier(K=8)
-#             eos_model = EOSWrapper(model; alpha=1.0, max_iter=8)
-#             mach = fit!(machine(eos_model, X, y), verbosity=0)
-
-#             # Get outlier scores
-#             scores = transform(mach, X)
-
-#             # Outliers should have higher scores
-#             clean_scores = scores[1:80]
-#             outlier_scores = scores[81:100]
-
-#             @test mean(outlier_scores) > mean(clean_scores)
-#             @test maximum(outlier_scores) > 0.5  # At least some outliers should be clearly identified
-#         end
-#     end
-
-#     @testset "Model compatibility check" begin
-#         # Test that EOSWrapper rejects models that don't support weights
-#         struct DummyUnsupportedModel end
-#         MLJModelInterface.is_supervised(::Type{DummyUnsupportedModel}) = true
-#         MLJModelInterface.supports_weights(::Type{DummyUnsupportedModel}) = false
-
-#         dummy_model = DummyUnsupportedModel()
-#         @test_throws ArgumentError EOSWrapper(dummy_model)
-#     end
-# end
+        dummy_model = DummyUnsupportedModel()
+        @test_throws ArgumentError EOSWrapper(dummy_model)
+    end
+end
