@@ -243,6 +243,14 @@ function _fit(eos::EOSWrapper, verbosity::Int, X, y=nothing)
             eSPA_loss = EntropicLearning.eSPA.calc_loss(
                 X_mat, Pi_mat, inner_fitresult.C, inner_fitresult.W, inner_fitresult.L, inner_fitresult.G, eos.model.epsC, eos.model.epsW, weights
             )
+            # TODO: may need to add another function:
+            # eos_loss(eos.model, inner_fitresult, distances, weights, args...)
+            # the default behaviour should be to take the distances and then return
+            # dot(weights, distances)
+            # Users can override this by defining a custom function that returns the loss
+            # for their model.
+            # Alternatively, for iterative models we could call a single update step,
+            # maybe this fixes the issue?
 
             # Compute objective function for convergence check
             @timeit to "loss" loss[iter] = eSPA_loss - eos.alpha * EntropicLearning.entropy(weights)

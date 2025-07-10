@@ -389,7 +389,7 @@ end
 # ==============================================================================
 # Implementation of EOS distances for eSPAClassifier
 # ==============================================================================
-
+# TODO: explore whether we should also add the cross-entropy term to the distances
 function EntropicLearning.eos_distances(::eSPAClassifier, fitresult, X, args...)
     # Extract the model parameters from the fitresult
     C = fitresult.C
