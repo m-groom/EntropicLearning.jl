@@ -171,14 +171,17 @@ end
 
 # Update step for the centroid matrix C
 function update_C!(
-    C::AbstractMatrix{Tf}, X::AbstractMatrix{Tf}, G::SparseMatrixCSC{Bool,Int}
+    C::AbstractMatrix{Tf}, X::AbstractMatrix{Tf}, G::SparseMatrixCSC{Bool,Int}, weights::AbstractVector{Tf}
 ) where {Tf<:AbstractFloat}
-    # Calculate the new centroids
-    mul!(C, X, G')  # C = X × Γ'
+    # # Calculate the new centroids
+    # mul!(C, X, G')  # C = X × Γ'
 
-    # Average over the number of instances in each cluster
-    # Clusters are guaranteed to be non-empty if remove_empty has been called first
-    C ./= sum(G; dims=2)'
+    # # Average over the number of instances in each cluster
+    # # Clusters are guaranteed to be non-empty if remove_empty has been called first
+    # C ./= sum(G; dims=2)'
+    denom = G * weights
+    numerator = X * (weights .* G')
+    C .= numerator ./ denom'
     return nothing
 end
 
@@ -289,7 +292,7 @@ function predict_proba(
     return P, G
 end
 
-# Iterative prediction function
+# Iterative prediction function - TODO: remove
 function iterative_predict!(
     P::AbstractMatrix{Tf},
     G::SparseMatrixCSC{Bool,Int},

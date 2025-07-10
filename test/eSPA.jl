@@ -618,7 +618,7 @@ end
                 X_transposed, P, C, W, L, G, model.epsC, model.epsW, weights
             )
 
-            eSPA.update_C!(C, X_transposed, G)
+            eSPA.update_C!(C, X_transposed, G, weights)
 
             # Test dimensions
             @test size(C) == (D_features, K_clusters)

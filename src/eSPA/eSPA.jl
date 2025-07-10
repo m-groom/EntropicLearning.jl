@@ -106,7 +106,7 @@ function MMI.fit(
             @timeit to "W" update_W!(W, X_mat, C, G, model.epsW, weights)
 
             # Evaluation of the C-step
-            @timeit to "C" update_C!(C, X_mat, G)
+            @timeit to "C" update_C!(C, X_mat, G, weights)
 
             # Evaluation of the Λ-step
             @timeit to "L" update_L!(L, Pi_mat, G)
@@ -126,7 +126,7 @@ function MMI.fit(
 
     # --- Unbiasing step ---
     @timeit to "Unbias" begin
-        if model.unbias
+        if model.unbias # TODO: make this non-optional
             # Unbias Γ
             update_G!(G, X_mat, Pi_mat, C, W, L, Tf(0.0), weights)
 
