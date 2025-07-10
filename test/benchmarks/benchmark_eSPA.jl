@@ -120,8 +120,6 @@ function create_model(;
         K=K_clusters,
         epsC=epsC,
         epsW=epsW,
-        unbias=true,
-        iterative_pred=true,
         random_state=rng,
     )
 end
@@ -139,13 +137,16 @@ function create_test_data(D_features::Int, T_instances::Int)
     X_table = X' #MLJBase.table(X')
     y_cat = MLJBase.categorical(y)
 
-    return X_table, y_cat
+    # Create weights
+    weights = fill(1.0 / T_instances, T_instances)
+
+    return X_table, y_cat, weights
 end
 
 # Benchmark entire model fitting process
 function benchmark_model_fitting(D::Int, T::Int, N_runs::Int=10)
     # Create test data once for this (D,T) combination
-    X_table, y_cat = create_test_data(D, T)
+    X_table, y_cat, weights = create_test_data(D, T)
 
     # Collect timing data from model reports
     total_times = Vector{Float64}(undef, N_runs)
@@ -157,7 +158,7 @@ function benchmark_model_fitting(D::Int, T::Int, N_runs::Int=10)
     unbias_memories = Vector{Int}(undef, N_runs)
 
     # Warmup
-    temp = MLJBase.machine(create_model(; rng=MersenneTwister(42)), X_table, y_cat)
+    temp = MLJBase.machine(create_model(; rng=MersenneTwister(42)), X_table, y_cat, weights)
     MLJBase.fit!(temp; verbosity=0)
 
     for i in 1:N_runs
@@ -166,7 +167,7 @@ function benchmark_model_fitting(D::Int, T::Int, N_runs::Int=10)
 
         # Fit the model once
         GC.gc()  # Consistent memory state
-        mach = MLJBase.machine(model_run, X_table, y_cat)
+        mach = MLJBase.machine(model_run, X_table, y_cat, weights)
         MLJBase.fit!(mach; verbosity=0)
 
         # Extract all timing data from this single fit
@@ -395,10 +396,11 @@ end
 function benchmark_update_G!(D::Int, T::Int, N_runs::Int=10)
     rng = MersenneTwister(42)
     X, P, C, W, L, G, model = create_test(D, T; rng=rng)
+    weights = fill(1.0 / T, T)
 
     return benchmark_function_with_memory(
         "update_G!",
-        (G, X, P, C, W, L, epsC) -> update_G!(G, X, P, C, W, L, epsC),
+        (G, X, P, C, W, L, epsC, weights) -> update_G!(G, X, P, C, W, L, epsC, weights),
         D,
         T,
         G,
@@ -407,7 +409,8 @@ function benchmark_update_G!(D::Int, T::Int, N_runs::Int=10)
         C,
         W,
         L,
-        model.epsC;
+        model.epsC,
+        weights;
         N_runs=N_runs,
     )
 end
@@ -415,17 +418,19 @@ end
 function benchmark_update_W!(D::Int, T::Int, N_runs::Int=10)
     rng = MersenneTwister(42)
     X, P, C, W, L, G, model = create_test(D, T; rng=rng)
+    weights = fill(1.0 / T, T)
 
     return benchmark_function_with_memory(
         "update_W!",
-        (W, X, C, G, epsW) -> update_W!(W, X, C, G, epsW),
+        (W, X, C, G, epsW, weights) -> update_W!(W, X, C, G, epsW, weights),
         D,
         T,
         W,
         X,
         C,
         G,
-        model.epsW;
+        model.epsW,
+        weights;
         N_runs=N_runs,
     )
 end
@@ -433,9 +438,10 @@ end
 function benchmark_update_C!(D::Int, T::Int, N_runs::Int=10)
     rng = MersenneTwister(42)
     X, P, C, W, L, G, model = create_test(D, T; rng=rng)
+    weights = fill(1.0 / T, T)
 
     return benchmark_function_with_memory(
-        "update_C!", (C, X, G) -> update_C!(C, X, G), D, T, C, X, G; N_runs=N_runs
+        "update_C!", (C, X, G, weights) -> update_C!(C, X, G, weights), D, T, C, X, G, weights; N_runs=N_runs
     )
 end
 
@@ -451,10 +457,11 @@ end
 function benchmark_calc_loss(D::Int, T::Int, N_runs::Int=10)
     rng = MersenneTwister(42)
     X, P, C, W, L, G, model = create_test(D, T; rng=rng)
+    weights = fill(1.0 / T, T)
 
     return benchmark_function_with_memory(
         "calc_loss",
-        (X, P, C, W, L, G, epsC, epsW) -> calc_loss(X, P, C, W, L, G, epsC, epsW),
+        (X, P, C, W, L, G, epsC, epsW, weights) -> calc_loss(X, P, C, W, L, G, epsC, epsW, weights),
         D,
         T,
         X,
@@ -464,7 +471,8 @@ function benchmark_calc_loss(D::Int, T::Int, N_runs::Int=10)
         L,
         G,
         model.epsC,
-        model.epsW;
+        model.epsW,
+        weights;
         N_runs=N_runs,
     )
 end
