@@ -155,11 +155,11 @@ function MMI.fit(
 end
 
 function MMI.predict(model::eSPAClassifier, fitresult::eSPAFitResult, X_mat)
-    # TODO: store G_new in the report
-    Pi_new, G_new = predict_proba(model, fitresult.C, fitresult.W, fitresult.L, X_mat)
+    Pi_new, G_new = _predict(model, fitresult.C, fitresult.W, fitresult.L, X_mat)
     probabilities = transpose(Pi_new)
+    report = (G=G_new,)
 
-    return MMI.UnivariateFinite(fitresult.classes, probabilities)
+    return MMI.UnivariateFinite(fitresult.classes, probabilities), report
 end
 
 function MMI.fitted_params(::eSPAClassifier, fitresult::eSPAFitResult)
@@ -173,10 +173,15 @@ function MMI.feature_importances(::eSPAClassifier, fitresult::eSPAFitResult, rep
     return [report.features[i] => importance[i] for i in eachindex(importance)]
 end
 
+function MMI.training_losses(::eSPAClassifier, report)
+    return report.loss
+end
+
 # MLJ Traits
 MMI.reports_feature_importances(::Type{<:eSPAClassifier}) = true
 MMI.iteration_parameter(::Type{<:eSPAClassifier}) = :max_iter
 MMI.supports_weights(::Type{<:eSPAClassifier}) = true
+MLJModelInterface.reporting_operations(::Type{<:eSPAClassifier}) = (:predict,)
 
 MMI.metadata_model(
     eSPAClassifier;

@@ -9,15 +9,15 @@ expected linear scaling relationships.
 
 using EntropicLearning
 using StatsBase: sample, median
-using LinearAlgebra
+# using LinearAlgebra
 using Random
-using SparseArrays
-using Clustering: initseeds!, KmppAlg, copyseeds!
-using Clustering.Distances: SqEuclidean, WeightedSqEuclidean
-using TimerOutputs
-using NearestNeighbors: KDTree, knn, inrange, Chebyshev
-using SpecialFunctions: digamma
-using Statistics: mean, std
+# using SparseArrays
+# using Clustering: initseeds!, KmppAlg, copyseeds!
+# using Clustering.Distances: SqEuclidean, WeightedSqEuclidean
+# using TimerOutputs
+# using NearestNeighbors: KDTree, knn, inrange, Chebyshev
+# using SpecialFunctions: digamma
+# using Statistics: mean, std
 using Distributions: MultivariateNormal
 using MLJBase
 using Printf
@@ -28,9 +28,9 @@ using JSON3
 import EntropicLearning.eSPA as eSPA
 
 # Include the core and extras module functions
-include("../../src/eSPA/core.jl")
-include("../../src/eSPA/extras.jl")
-include("../../src/common/functions.jl")
+# include("../../src/eSPA/core.jl")
+# include("../../src/eSPA/extras.jl")
+# include("../../src/common/functions.jl")
 
 # Function to sanitise values for JSON serialisation
 function sanitise(value::Real)
@@ -62,7 +62,7 @@ function make_worms(
     random_state::Union{AbstractRNG,Integer}=Random.default_rng(),
 ) where {Ti<:Integer,Tf<:AbstractFloat}
     # Get the random number generator
-    rng = get_rng(random_state)
+    rng = EntropicLearning.get_rng(random_state)
 
     # Initialise X and Π
     X = rand(rng, Tf, D, T)

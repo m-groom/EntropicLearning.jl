@@ -56,3 +56,17 @@ function format_weights(w, y::AbstractVector{<:Integer}, Tf::Type{<:AbstractFloa
     EntropicLearning.normalise!(weights)
     return weights
 end
+
+# Helper function to get Π from y_int - TODO: add tests
+function get_pi(
+    y_int::AbstractVector{<:Integer}, M_classes::Integer, Tf::Type{<:AbstractFloat}=Float64
+)
+    T_instances = length(y_int)
+    Pi_mat = zeros(Tf, M_classes, T_instances)
+    if T_instances > 0
+        for t in 1:T_instances
+            Pi_mat[y_int[t], t] = one(Tf)
+        end
+    end
+    return Pi_mat
+end

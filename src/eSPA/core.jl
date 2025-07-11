@@ -269,7 +269,7 @@ function update_P!(
 end
 
 # Prediction function
-function predict_proba(
+function _predict(
     model::eSPAClassifier,
     C::AbstractMatrix{Tf},
     W::AbstractVector{Tf},

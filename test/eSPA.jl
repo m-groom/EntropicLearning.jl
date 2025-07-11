@@ -766,9 +766,9 @@ end
         MLJBase.fit!(mach; verbosity=0)
         fitresult = mach.fitresult
 
-        @testset "predict_proba tests" begin
+        @testset "_predict tests" begin
             X_test = X_transposed[:, 1:10]
-            P_test, _ = eSPA.predict_proba(model, fitresult.C, fitresult.W, fitresult.L, X_test)
+            P_test, _ = eSPA._predict(model, fitresult.C, fitresult.W, fitresult.L, X_test)
             @test size(P_test) == (M_classes, 10)
             @test all(sum(P_test; dims=1) .≈ 1.0)
             @test all(P_test .>= 0)
@@ -777,20 +777,20 @@ end
             model_repro = eSPAClassifier(;
                 K=K_clusters, random_state=123
             )
-            P1, _ = eSPA.predict_proba(
+            P1, _ = eSPA._predict(
                 model_repro, fitresult.C, fitresult.W, fitresult.L, X_test
             )
             model_repro2 = eSPAClassifier(;
                 K=K_clusters, random_state=123
             )
-            P2, _ = eSPA.predict_proba(
+            P2, _ = eSPA._predict(
                 model_repro2, fitresult.C, fitresult.W, fitresult.L, X_test
             )
             @test P1 ≈ P2
 
             # Test single instance prediction
             X_single = X_transposed[:, 1:1]
-            P_single, _ = eSPA.predict_proba(
+            P_single, _ = eSPA._predict(
                 model, fitresult.C, fitresult.W, fitresult.L, X_single
             )
             @test size(P_single) == (M_classes, 1)
@@ -908,7 +908,7 @@ end
 
         @testset "Reproducible affiliations" begin
             # Test unbiasing
-            _, G_unbias = eSPA.predict_proba(
+            _, G_unbias = eSPA._predict(
                 model,
                 fitresult.C,
                 fitresult.W,
