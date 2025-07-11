@@ -285,9 +285,11 @@ function MMI.transform(eos::EOSWrapper, fitresult::EOSFitResult, Xnew)
     args = MMI.reformat(eos.model, Xnew)
     dist = EntropicLearning.eos_distances(eos.model, fitresult.inner_fitresult, args...)
     append!(dist, fitresult.distances)
-    alpha_range = ((1.0 - MMI.nrows(Xnew)/length(fitresult.distances)) * eos.alpha, (1.0 + MMI.nrows(Xnew)/length(fitresult.distances)) * eos.alpha) # TODO: need to test how robust this is
+    amin = min(MMI.nrows(Xnew)/length(fitresult.distances), length(fitresult.distances)/MMI.nrows(Xnew))
+    amax = max(MMI.nrows(Xnew)/length(fitresult.distances), length(fitresult.distances)/MMI.nrows(Xnew))
+    alpha_range = (amin * eos.alpha, amax * eos.alpha + 1e-5)
     ESS = fitresult.ESS
-    weights_full, alpha = EntropicLearning.eos_weights(dist, alpha_range, ESS)
+    weights_full, alpha = EntropicLearning.eos_weights(dist, alpha_range, ESS, atol=1e-6)
     weights_new = weights_full[1:MMI.nrows(Xnew)]
     return weights_new, (alpha=alpha,)
 end

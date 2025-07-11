@@ -284,10 +284,10 @@ end
             ŷ = predict(mach, X_test)
             @test length(ŷ) == nrows(X_test)
 
-            # Test transform (outlier scores)
-            scores = transform(mach, X_test)
-            @test length(scores) == nrows(X_test)
-            @test all(0 .<= scores .<= 1)
+            # Test transform (weights)
+            weights = transform(mach, X_test)
+            @test length(weights) == nrows(X_test)
+            @test all(0 .<= weights .<= 1)
         end
 
         @testset "Convergence behavior" begin
@@ -342,7 +342,8 @@ end
         mach = fit!(machine(eos_model, X, y), verbosity=0)
 
         # Get outlier scores
-        scores = EntropicLearning.outlier_scores(transform(mach, X))
+        weights = transform(mach, X)
+        scores = EntropicLearning.outlier_scores(weights)
 
         # Outliers should have higher scores
         clean_scores = scores[1:80]
