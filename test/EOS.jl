@@ -268,7 +268,7 @@ end
         @testset "Basic fitting and prediction" begin
             # Check fitresult structure
             @test mach.fitresult isa EntropicLearning.EOS.EOSFitResult
-            weights = mach.fitresult.weights
+            weights = MLJModelInterface.fitted_params(mach).weights
             @test length(weights) == nrows(X_table)
             @test all(weights .>= 0)
             @test isapprox(sum(weights), 1.0, atol=1e-10)
@@ -319,8 +319,8 @@ end
             mach_large = fit!(machine(eos_large, X_table, y_cat), verbosity=0)
 
             # Large alpha should lead to more uniform weights (higher entropy)
-            entropy_small = EntropicLearning.entropy(mach_small.fitresult.weights)
-            entropy_large = EntropicLearning.entropy(mach_large.fitresult.weights)
+            entropy_small = EntropicLearning.entropy(MLJModelInterface.fitted_params(mach_small).weights)
+            entropy_large = EntropicLearning.entropy(MLJModelInterface.fitted_params(mach_large).weights)
 
             @test entropy_small < entropy_large
         end

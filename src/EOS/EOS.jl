@@ -36,6 +36,7 @@ mutable struct UnsupervisedEOSWrapper{M} <: MMI.Unsupervised
     max_iter::Int
 end
 
+# TODO: make MLJ-compliant docstring
 """
     EOSWrapper{M}
 
@@ -154,7 +155,7 @@ function MMI.reports_feature_importances(::Type{<:EOSWrapper{M}}) where {M}
 end
 MMI.is_pure_julia(::Type{<:EOSWrapper{M}}) where {M} = MMI.is_pure_julia(M)
 MMI.supports_training_losses(::Type{<:EOSWrapper}) = true
-MMI.reporting_operations(::Type{<:EOSWrapper}) = (:predict,)
+MMI.reporting_operations(::Type{<:EOSWrapper}) = (:predict,:transform)
 
 # Input/output scitypes - inherit from wrapped model
 MMI.input_scitype(::Type{<:EOSWrapper{M}}) where {M} = MMI.input_scitype(M)
@@ -167,7 +168,8 @@ MMI.target_scitype(::Type{<:ProbabilisticEOSWrapper{M}}) where {M} = MMI.target_
 
 struct EOSFitResult{F,T<:AbstractFloat}
     inner_fitresult::F
-    weights::AbstractVector{T}  # TODO: store distances instead
+    distances::AbstractVector{T}
+    ESS::T
 end
 
 # ==============================================================================
@@ -185,7 +187,7 @@ function MMI.fit(eos::EOSWrapper, verbosity::Int, X, y)
     return _fit(eos, verbosity, X, y)
 end
 
-# Common implementation
+# Common implementation - TODO: separate into fit and update methods
 function _fit(eos::EOSWrapper, verbosity::Int, X, y=nothing)
     # Initialise the timer
     to = TimerOutput()
@@ -251,7 +253,7 @@ function _fit(eos::EOSWrapper, verbosity::Int, X, y=nothing)
     end
 
     # --- Return fitresult, cache and report ---
-    fitresult = EOSFitResult(inner_fitresult, weights)
+    fitresult = EOSFitResult(inner_fitresult, distances, EntropicLearning.effective_dimension(weights, normalise=true))
     report = (
         iterations=iterations,
         loss=loss[1:iterations + 1],
@@ -277,14 +279,17 @@ end
 # ==============================================================================
 # Transform and Predict Methods
 # ==============================================================================
-
+# TODO: write a data front-end so that transform (and predict) get the model-specific data format
 # Transform always returns weights (for both supervised and unsupervised)
-# TODO: modify so that weights also include distances from training data
 function MMI.transform(eos::EOSWrapper, fitresult::EOSFitResult, Xnew)
-    # TODO: call root-finding method instead?
-    return EntropicLearning.calculate_eos_weights(
-        eos.model, fitresult.inner_fitresult, eos.alpha, Xnew
-    )
+    args = MMI.reformat(eos.model, Xnew)
+    dist = EntropicLearning.eos_distances(eos.model, fitresult.inner_fitresult, args...)
+    append!(dist, fitresult.distances)
+    alpha_range = ((1.0 - MMI.nrows(Xnew)/length(fitresult.distances)) * eos.alpha, (1.0 + MMI.nrows(Xnew)/length(fitresult.distances)) * eos.alpha) # TODO: need to test how robust this is
+    ESS = fitresult.ESS
+    weights_full, alpha = EntropicLearning.eos_weights(dist, alpha_range, ESS)
+    weights_new = weights_full[1:MMI.nrows(Xnew)]
+    return weights_new, (alpha=alpha,)
 end
 
 # For supervised models only
@@ -296,11 +301,11 @@ function MMI.predict(
     # Reformat new data for the wrapped model and pass through
     args = MMI.reformat(eos.model, Xnew)
     result = MMI.predict(eos.model, fitresult.inner_fitresult, args...)
-    weights = MMI.transform(eos, fitresult, Xnew)
+    weights, report = MMI.transform(eos, fitresult, Xnew)
     if :predict in MMI.reporting_operations(typeof(eos.model))
-        return result[1], (weights=weights, inner_report_pred=result[2])
+        return result[1], (weights=weights, inner_report_pred=result[2], report...)
     else
-        return result, (weights=weights,)
+        return result, (weights=weights, report...)
     end
 end
 
@@ -310,7 +315,7 @@ end
 
 function MMI.fitted_params(eos::EOSWrapper, fitresult::EOSFitResult)
     return (
-        weights=fitresult.weights,
+        weights=EntropicLearning.eos_weights(fitresult.distances, eos.alpha),
         inner_fitted_params=MMI.fitted_params(eos.model, fitresult.inner_fitresult),
     )
 end
