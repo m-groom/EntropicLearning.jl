@@ -87,7 +87,6 @@ function MMI.fit(
 
     # --- Return fitresult, cache and report ---
     fitresult = eSPAFitResult(C, W, L, G, classes)
-    cache = nothing
     report = (
         iterations=iter,
         loss=loss,
@@ -96,11 +95,68 @@ function MMI.fit(
         classes=classes_seen,
         features=column_names,
     )
+    cache = (
+        report...,
+        dimensions=(D_features, T_instances, M_classes, K_current),
+        precision=Tf,
+    )
 
     return (fitresult, cache, report)
 end
 
-# TODO: update method
+function MMI.update(
+    model::eSPAClassifier,
+    verbosity::Int,
+    fitresult::eSPAFitResult,   # Note: this is mutated
+    old_cache,
+    X_mat,
+    Pi_mat,
+    y_int,
+    column_names,
+    classes,
+    w=nothing,
+)
+    # Get the timer
+    to = old_cache.timings
+
+    # Extract from cache
+    Tf = old_cache.precision
+    D_features, T_instances, M_classes, _ = old_cache.dimensions
+
+    # Ensure weights are normalised
+    if !isnothing(w)
+        weights = format_weights(w, y_int, Tf)
+    else
+        weights = fill(Tf(1 / T_instances), T_instances)
+    end
+
+    # --- Initialisation ---
+    C, W, L, G = fitresult.C, fitresult.W, fitresult.L, fitresult.G
+
+    # --- Training ---
+    loss, iter, to = _fit!(C, W, L, G, model, verbosity, X_mat, Pi_mat, weights, to)
+
+    # Estimate the effective number of parameters
+    Deff = EntropicLearning.effective_dimension(W)
+    K_current = size(C, 2)
+    n_params = Deff * (K_current + 1) + (M_classes - 1) * K_current
+
+    # --- Return fitresult, cache and report ---
+    report = (
+        iterations=iter + old_cache.iterations,
+        loss=vcat(old_cache.loss, loss),
+        timings=to,
+        n_params=n_params,
+        classes=old_cache.classes,
+        features=old_cache.features,
+    )
+    cache = (
+        report...,
+        dimensions=(D_features, T_instances, M_classes, K_current),
+        precision=Tf,
+    )
+    return (fitresult, cache, report)
+end
 
 function MMI.predict(model::eSPAClassifier, fitresult::eSPAFitResult, X_mat)
     Pi_new, G_new = _predict(model, fitresult.C, fitresult.W, fitresult.L, X_mat)
@@ -129,6 +185,7 @@ end
 MMI.reports_feature_importances(::Type{<:eSPAClassifier}) = true
 MMI.iteration_parameter(::Type{<:eSPAClassifier}) = :max_iter
 MMI.supports_weights(::Type{<:eSPAClassifier}) = true
+MMI.supports_training_losses(::Type{<:eSPAClassifier}) = true
 MMI.reporting_operations(::Type{<:eSPAClassifier}) = (:predict,)
 
 MMI.metadata_model(
