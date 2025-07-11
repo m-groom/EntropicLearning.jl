@@ -845,14 +845,14 @@ end
             iterations = report.iterations
 
             # Test that loss is the correct length
-            @test length(loss) == iterations + 1
+            @test length(loss) == iterations
 
             # Test overall decrease
             @test loss[end] <= loss[1] + 1e-10
 
             # Test that loss is monotonically decreasing
-            for i in 1:iterations
-                @test loss[i + 1] <= loss[i] + 1e-10
+            for i in 2:iterations
+                @test loss[i] <= loss[i - 1] + 1e-10
             end
         end
 
@@ -1110,14 +1110,14 @@ end
             iterations = report.iterations
 
             # Test that loss is the correct length
-            @test length(loss) == iterations + 1
+            @test length(loss) == iterations
 
             # Test overall decrease
             @test loss[end] <= loss[1] + 1e-10
 
             # Test that loss is monotonically decreasing
-            for i in 1:iterations
-                @test loss[i + 1] <= loss[i] + 1e-10
+            for i in 2:iterations
+                @test loss[i] <= loss[i - 1] + 1e-10
             end
         end
 

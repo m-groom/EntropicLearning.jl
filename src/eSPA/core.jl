@@ -255,6 +255,123 @@ function calc_loss(
     return disc_error + class_error  - entr_W
 end
 
+# Fit function
+function _fit!(
+    C::AbstractMatrix{Tf},
+    W::AbstractVector{Tf},
+    L::AbstractMatrix{Tf},
+    G::SparseMatrixCSC{Bool,Int},
+    model::eSPAClassifier,
+    verbosity::Int,
+    X::AbstractMatrix{Tf},
+    P::AbstractMatrix{Tf},
+    weights::AbstractVector{Tf},
+    to::TimerOutput,
+) where {Tf<:AbstractFloat}
+
+    # --- Initialise Loss ---
+    K_current = size(C, 2)                      # Current number of clusters
+    loss = fill(Tf(Inf), model.max_iter + 1)    # Loss for each iteration
+    iter = 0                                    # Iteration counter
+    loss[1] = calc_loss(X, P, C, W, L, G, model.epsC, model.epsW, weights)
+
+    # --- Main Optimisation Loop ---
+    @timeit to "Training" begin
+        while !converged(loss, iter, model.max_iter, model.tol)
+            # Update iteration counter
+            iter += 1
+
+            # Evaluation of the Γ-step
+            @timeit to "G" update_G!(G, X, P, C, W, L, model.epsC, weights)
+
+            # Discard empty boxes
+            notEmpty, K_new = find_empty(G)
+            if K_new < K_current
+                @timeit to "Prune" C, L, G = remove_empty(C, L, G, notEmpty)
+                K_current = copy(K_new)
+            end
+
+            # Evaluation of the W-step
+            @timeit to "W" update_W!(W, X, C, G, model.epsW, weights)
+
+            # Evaluation of the C-step
+            @timeit to "C" update_C!(C, X, G, weights)
+
+            # Evaluation of the Λ-step
+            @timeit to "L" update_L!(L, P, G)
+
+            # Update loss
+            @timeit to "Loss" loss[iter + 1] = calc_loss(
+                X, P, C, W, L, G, model.epsC, model.epsW, weights
+            )
+
+            # Check if loss function has increased
+            check_loss(loss, iter, verbosity)
+        end
+    end
+
+    # Warn if the maximum number of iterations was reached
+    check_iter(iter, model.max_iter, verbosity)
+
+    # --- Unbiasing step ---
+    @timeit to "Unbias" begin
+        # Unbias Γ
+        update_G!(G, X, P, C, W, L, Tf(0.0), weights)
+
+        # Discard empty boxes
+        notEmpty, K_new = find_empty(G)
+        if K_new < K_current
+            C, L, G = remove_empty(C, L, G, notEmpty)
+            K_current = copy(K_new)
+        end
+
+        # Unbias Λ
+        update_L!(L, P, G)
+    end
+
+    # Return the loss, number of iterations and the timer output
+    return loss[2:(iter + 1)], iter, to
+end
+
+
+# Function to check for convergence
+function converged(
+    loss::AbstractVector{<:AbstractFloat}, iter::Int, max_iter::Int, tol::Float64
+)
+    # Check if max iterations reached
+    if iter >= max_iter
+        return true
+    end
+
+    # The first iteration (iter=0) is never converged
+    if iter == 0
+        return false
+    end
+
+    # Check for convergence based on relative loss change
+    return abs((loss[iter + 1] - loss[iter]) / loss[iter]) <= tol
+end
+
+# Function to check if the loss has increased
+function check_loss(
+    loss::AbstractVector{Tf}, iter::Int, verbosity::Int; context::String=""
+) where {Tf<:AbstractFloat}
+    if verbosity > 0 && loss[iter + 1] - loss[iter] > eps(Tf)
+        msg = isempty(context) ? "" : " in $context"
+        @warn "Loss function$msg has increased at iteration $iter by $(loss[iter + 1] - loss[iter])"
+    end
+    return nothing
+end
+
+# Function to check if the maximum number of iterations has been reached
+function check_iter(iter::Int, max_iter::Int, verbosity::Int; context::String="")
+    if verbosity > 0 && iter >= max_iter
+        msg = isempty(context) ? "" : " in $context"
+        @warn "Maximum number of iterations reached$msg"
+    end
+    return nothing
+end
+
 # Function to calculate Π
 function update_P!(
     P::AbstractMatrix{Tf}, L::AbstractMatrix{Tf}, G::SparseMatrixCSC{Bool,Int}
@@ -303,42 +420,4 @@ function _predict(
 
     # Return Π
     return P, G
-end
-
-# Function to check for convergence
-function converged(
-    loss::AbstractVector{<:AbstractFloat}, iter::Int, max_iter::Int, tol::Float64
-)
-    # Check if max iterations reached
-    if iter >= max_iter
-        return true
-    end
-
-    # The first iteration (iter=0) is never converged
-    if iter == 0
-        return false
-    end
-
-    # Check for convergence based on relative loss change
-    return abs((loss[iter + 1] - loss[iter]) / loss[iter]) <= tol
-end
-
-# Function to check if the loss has increased
-function check_loss(
-    loss::AbstractVector{Tf}, iter::Int, verbosity::Int; context::String=""
-) where {Tf<:AbstractFloat}
-    if verbosity > 0 && loss[iter + 1] - loss[iter] > eps(Tf)
-        msg = isempty(context) ? "" : " in $context"
-        @warn "Loss function$msg has increased at iteration $iter by $(loss[iter + 1] - loss[iter])"
-    end
-    return nothing
-end
-
-# Function to check if the maximum number of iterations has been reached
-function check_iter(iter::Int, max_iter::Int, verbosity::Int; context::String="")
-    if verbosity > 0 && iter >= max_iter
-        msg = isempty(context) ? "" : " in $context"
-        @warn "Maximum number of iterations reached$msg"
-    end
-    return nothing
 end

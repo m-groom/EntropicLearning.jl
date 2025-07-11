@@ -75,68 +75,14 @@ function MMI.fit(
     # --- Initialisation ---
     @timeit to "Initialisation" begin
         C, W, L, G = initialise(model, X_mat, y_int, D_features, T_instances, M_classes)
-        K_current = size(C, 2)                      # Current number of clusters
-        loss = fill(Tf(Inf), model.max_iter + 1)    # Loss for each iteration
-        iter = 0                                    # Iteration counter
-        loss[1] = calc_loss(X_mat, Pi_mat, C, W, L, G, model.epsC, model.epsW, weights)
     end
 
-    # --- Main Optimisation Loop ---
-    @timeit to "Training" begin
-        while !converged(loss, iter, model.max_iter, model.tol)
-            # Update iteration counter
-            iter += 1
-
-            # Evaluation of the Γ-step
-            @timeit to "G" update_G!(G, X_mat, Pi_mat, C, W, L, model.epsC, weights)
-
-            # Discard empty boxes
-            notEmpty, K_new = find_empty(G)
-            if K_new < K_current
-                @timeit to "Prune" C, L, G = remove_empty(C, L, G, notEmpty)
-                K_current = copy(K_new)
-            end
-
-            # Evaluation of the W-step
-            @timeit to "W" update_W!(W, X_mat, C, G, model.epsW, weights)
-
-            # Evaluation of the C-step
-            @timeit to "C" update_C!(C, X_mat, G, weights)
-
-            # Evaluation of the Λ-step
-            @timeit to "L" update_L!(L, Pi_mat, G)
-
-            # Update loss
-            @timeit to "Loss" loss[iter + 1] = calc_loss(
-                X_mat, Pi_mat, C, W, L, G, model.epsC, model.epsW, weights
-            )
-
-            # Check if loss function has increased
-            check_loss(loss, iter, verbosity)
-        end
-    end
-
-    # Warn if the maximum number of iterations was reached
-    check_iter(iter, model.max_iter, verbosity)
-
-    # --- Unbiasing step ---
-    @timeit to "Unbias" begin
-        # Unbias Γ
-        update_G!(G, X_mat, Pi_mat, C, W, L, Tf(0.0), weights)
-
-        # Discard empty boxes
-        notEmpty, K_new = find_empty(G)
-        if K_new < K_current
-            C, L, G = remove_empty(C, L, G, notEmpty)
-            K_current = copy(K_new)
-        end
-
-        # Unbias Λ
-        update_L!(L, Pi_mat, G)
-    end
+    # --- Training ---
+    loss, iter, to = _fit!(C, W, L, G, model, verbosity, X_mat, Pi_mat, weights, to)
 
     # Estimate the effective number of parameters
     Deff = EntropicLearning.effective_dimension(W)
+    K_current = size(C, 2)
     n_params = Deff * (K_current + 1) + (M_classes - 1) * K_current
 
     # --- Return fitresult, cache and report ---
@@ -144,7 +90,7 @@ function MMI.fit(
     cache = nothing
     report = (
         iterations=iter,
-        loss=loss[1:(iter + 1)],
+        loss=loss,
         timings=to,
         n_params=n_params,
         classes=classes_seen,
@@ -153,6 +99,8 @@ function MMI.fit(
 
     return (fitresult, cache, report)
 end
+
+# TODO: update method
 
 function MMI.predict(model::eSPAClassifier, fitresult::eSPAFitResult, X_mat)
     Pi_new, G_new = _predict(model, fitresult.C, fitresult.W, fitresult.L, X_mat)
@@ -181,7 +129,7 @@ end
 MMI.reports_feature_importances(::Type{<:eSPAClassifier}) = true
 MMI.iteration_parameter(::Type{<:eSPAClassifier}) = :max_iter
 MMI.supports_weights(::Type{<:eSPAClassifier}) = true
-MLJModelInterface.reporting_operations(::Type{<:eSPAClassifier}) = (:predict,)
+MMI.reporting_operations(::Type{<:eSPAClassifier}) = (:predict,)
 
 MMI.metadata_model(
     eSPAClassifier;
