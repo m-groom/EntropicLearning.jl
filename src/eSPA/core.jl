@@ -311,22 +311,24 @@ function _fit!(
     end
 
     # Warn if the maximum number of iterations was reached
-    check_iter(iter, model.max_iter, verbosity)
+    exceeded = check_iter(iter, model.max_iter, verbosity)
 
     # --- Unbiasing step ---
-    @timeit to "Unbias" begin
-        # Unbias Γ
-        update_G!(G, X, P, C, W, L, Tf(0.0), weights)
+    if !exceeded
+        @timeit to "Unbias" begin
+            # Unbias Γ
+            update_G!(G, X, P, C, W, L, Tf(0.0), weights)
 
-        # Discard empty boxes
-        notEmpty, K_new = find_empty(G)
-        if K_new < K_current
-            C, L, G = remove_empty(C, L, G, notEmpty)
-            K_current = copy(K_new)
+            # Discard empty boxes
+            notEmpty, K_new = find_empty(G)
+            if K_new < K_current
+                C, L, G = remove_empty(C, L, G, notEmpty)
+                K_current = copy(K_new)
+            end
+
+            # Unbias Λ
+            update_L!(L, P, G)
         end
-
-        # Unbias Λ
-        update_L!(L, P, G)
     end
 
     # Return the loss, number of iterations and the timer output
@@ -365,11 +367,12 @@ end
 
 # Function to check if the maximum number of iterations has been reached
 function check_iter(iter::Int, max_iter::Int, verbosity::Int; context::String="")
-    if verbosity > 0 && iter >= max_iter
+    exceeded = iter >= max_iter
+    if verbosity > 0 && exceeded
         msg = isempty(context) ? "" : " in $context"
         @warn "Maximum number of iterations reached$msg"
     end
-    return nothing
+    return exceeded
 end
 
 # Function to calculate Π
