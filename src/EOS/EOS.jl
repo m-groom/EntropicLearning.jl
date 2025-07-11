@@ -6,12 +6,6 @@ using SparseArrays
 using TimerOutputs
 import ..EntropicLearning
 
-# Include common functions - TODO: call from EntropicLearning instead
-# include("../common/functions.jl")
-
-# Include EOS utility functions - TODO: call from EntropicLearning instead
-# include("../utilities/eos.jl")
-
 const MMI = MLJModelInterface
 
 export EOSWrapper
@@ -159,6 +153,8 @@ function MMI.reports_feature_importances(::Type{<:EOSWrapper{M}}) where {M}
     MMI.reports_feature_importances(M)
 end
 MMI.is_pure_julia(::Type{<:EOSWrapper{M}}) where {M} = MMI.is_pure_julia(M)
+MMI.supports_training_losses(::Type{<:EOSWrapper}) = true
+MMI.reporting_operations(::Type{<:EOSWrapper}) = (:predict,)
 
 # Input/output scitypes - inherit from wrapped model
 MMI.input_scitype(::Type{<:EOSWrapper{M}}) where {M} = MMI.input_scitype(M)
@@ -285,15 +281,13 @@ end
 # Transform always returns weights (for both supervised and unsupervised)
 # TODO: modify so that weights also include distances from training data
 function MMI.transform(eos::EOSWrapper, fitresult::EOSFitResult, Xnew)
-    # Reformat new data for the wrapped model
-    # args = MMI.reformat(eos.model, Xnew) # Assume first argument is the data matrix
     # TODO: call root-finding method instead?
     return EntropicLearning.calculate_eos_weights(
         eos.model, fitresult.inner_fitresult, eos.alpha, Xnew
     )
 end
 
-# For supervised models only - TODO: return new weights in report (from transform)
+# For supervised models only
 function MMI.predict(
     eos::Union{DeterministicEOSWrapper,ProbabilisticEOSWrapper},
     fitresult::EOSFitResult,
@@ -302,10 +296,11 @@ function MMI.predict(
     # Reformat new data for the wrapped model and pass through
     args = MMI.reformat(eos.model, Xnew)
     result = MMI.predict(eos.model, fitresult.inner_fitresult, args...)
+    weights = MMI.transform(eos, fitresult, Xnew)
     if :predict in MMI.reporting_operations(typeof(eos.model))
-        return result[1] #, result[2]   # TODO: modify this to return the report
+        return result[1], (weights=weights, inner_report_pred=result[2])
     else
-        return result
+        return result, (weights=weights,)
     end
 end
 
@@ -324,6 +319,8 @@ function MMI.feature_importances(eos::EOSWrapper, fitresult::EOSFitResult, repor
     return MMI.feature_importances(eos.model, fitresult.inner_fitresult, report)
 end
 
-# TODO: return report for predict
+function MMI.training_losses(::EOSWrapper, report)
+    return report.loss
+end
 
 end # module EOS
