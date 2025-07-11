@@ -218,7 +218,7 @@ function _fit(eos::EOSWrapper, verbosity::Int, X, y=nothing)
     fit_args = (args..., weights)
 
     X_mat = args[1]
-    y_int = args[2]
+    y_int = args[3]
     Pi_mat = EntropicLearning.eSPA.get_pi(y_int, length(classes(y)))
 
     # --- Main Optimisation Loop ---
@@ -310,7 +310,12 @@ function MMI.predict(
 )
     # Reformat new data for the wrapped model and pass through
     args = MMI.reformat(eos.model, Xnew)
-    return MMI.predict(eos.model, fitresult.inner_fitresult, args...)
+    result = MMI.predict(eos.model, fitresult.inner_fitresult, args...)
+    if :predict in MMI.reporting_operations(typeof(eos.model))
+        return result[1] #, result[2]   # TODO: modify this to return the report
+    else
+        return result
+    end
 end
 
 # ==============================================================================
@@ -327,5 +332,7 @@ end
 function MMI.feature_importances(eos::EOSWrapper, fitresult::EOSFitResult, report)
     return MMI.feature_importances(eos.model, fitresult.inner_fitresult, report)
 end
+
+# TODO: return report for predict
 
 end # module EOS

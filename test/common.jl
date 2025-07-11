@@ -2,6 +2,7 @@ using Test
 using LinearAlgebra # For norm, etc.
 using SparseArrays # For sparse matrix tests
 using Statistics # For mean, etc.
+using Random
 
 include("../src/common/functions.jl")
 

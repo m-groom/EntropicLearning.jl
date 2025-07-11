@@ -16,7 +16,7 @@ function initialise(
     )
 
     # Initialise the random number generator
-    rng = get_rng(model.random_state)
+    rng = EntropicLearning.get_rng(model.random_state)
 
     # Initialise the feature importance vector
     W = zeros(Tf, D_features)
@@ -282,7 +282,7 @@ function _predict(
     M_classes = size(L, 1)
 
     # Initialise the random number generator
-    rng = get_rng(model.random_state)
+    rng = EntropicLearning.get_rng(model.random_state)
 
     # Initialise Γ and Π
     G = sparse(

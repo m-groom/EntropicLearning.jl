@@ -14,24 +14,28 @@ function MMI.reformat(::eSPAClassifier, X, y)
     X_mat = MMI.matrix(X; transpose=true)
     y_int = MMI.int(y)
     classes = MMI.classes(y)
+    # Extract dimensions and get Π
+    Tf = eltype(X_mat)                                  # Floating point type
+    M_classes = length(classes)                         # Total number of classes
+    Pi_mat = get_pi(y_int, M_classes, Tf)               # Target matrix
 
-    return (X_mat, y_int, _columnnames(X), classes)
+    return (X_mat, Pi_mat, y_int, _columnnames(X), classes)
 end
 
 # Select rows - no weights
-function MMI.selectrows(::eSPAClassifier, I, X_mat, y_int, column_names, classes)
-    return (view(X_mat, :, I), view(y_int, I), column_names, classes)
+function MMI.selectrows(::eSPAClassifier, I, X_mat, Pi_mat, y_int, column_names, classes)
+    return (view(X_mat, :, I), view(Pi_mat, :, I), view(y_int, I), column_names, classes)
 end
 
 # Reformat - with weights
 function MMI.reformat(model::eSPAClassifier, X, y, w)
-    X_mat, y_int, column_names, classes = MMI.reformat(model, X, y)
-    return (X_mat, y_int, column_names, classes, w)
+    X_mat, Pi_mat, y_int, column_names, classes = MMI.reformat(model, X, y)
+    return (X_mat, Pi_mat, y_int, column_names, classes, w)
 end
 
 # Select rows - with weights
-function MMI.selectrows(::eSPAClassifier, I, X_mat, y_int, column_names, classes, w)
-    return (view(X_mat, :, I), view(y_int, I), column_names, classes, view(w, I))
+function MMI.selectrows(::eSPAClassifier, I, X_mat, Pi_mat, y_int, column_names, classes, w)
+    return (view(X_mat, :, I), view(Pi_mat, :, I), view(y_int, I), column_names, classes, view(w, I))
 end
 
 # Reformat - predict

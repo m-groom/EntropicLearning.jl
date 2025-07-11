@@ -50,6 +50,7 @@ function MMI.fit(
     model::eSPAClassifier,
     verbosity::Int,
     X_mat,
+    Pi_mat,
     y_int,
     column_names,
     classes,
@@ -58,11 +59,10 @@ function MMI.fit(
     # Initialise the timer
     to = TimerOutput()
 
-    # Extract dimensions and get Π
+    # Extract dimensions
     Tf = eltype(X_mat)                                  # Floating point type
     D_features, T_instances = size(X_mat)               # Dimensions
     M_classes = length(classes)                         # Total number of classes
-    Pi_mat = get_pi(y_int, M_classes, Tf)               # Target matrix
     classes_seen = MMI.decoder(classes)(unique(y_int))  # Classes seen in training data
 
     # Ensure weights are normalised
