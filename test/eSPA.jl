@@ -463,6 +463,8 @@ import EntropicLearning.eSPA as eSPA
             @test ε_close_max > 0
         end
     end
+
+    # TODO: get_pi tests
 end
 
 @testset "eSPA core" begin
@@ -1149,4 +1151,6 @@ end
             @test classes == MLJBase.classes(y_cat)
         end
     end
+
+    # TODO: test update method
 end

@@ -202,24 +202,18 @@ function _fit(eos::EOSWrapper, verbosity::Int, X, y=nothing)
         args = MMI.reformat(eos.model, X, y)
     end
 
-    # Initialise weights and distances - TODO: fit the model without weights first
-    Tf = Float64
-    weights = fill(Tf(1/T_instances), T_instances)
-    distances = zeros(Tf, T_instances)
-    inner_fitresult = nothing
-    inner_cache = nothing
-    inner_report = nothing
-
-    # Store losses for convergence tracking
-    loss = fill(Tf(Inf), eos.max_iter)
-    iterations = 0
-
-    # Prepare arguments for fitting the inner model
-    fit_args = (args..., weights)
-
-    X_mat = args[1]
-    y_int = args[3]
-    Pi_mat = EntropicLearning.eSPA.get_pi(y_int, length(classes(y)))
+    # --- Initialisation ---
+    @timeit to "Initialisation" begin
+        Tf = eltype(X[1])
+        weights = fill(Tf(1/T_instances), T_instances)
+        inner_fitresult, inner_cache, inner_report = MMI.fit(eos.model, verbosity - 1, args...)
+        distances = EntropicLearning.eos_distances(eos.model, inner_fitresult, args...)
+        EntropicLearning.update_weights!(weights, distances, eos.alpha)
+        # Store losses for convergence tracking
+        loss = fill(Tf(Inf), eos.max_iter + 1)
+        iterations = 0
+        loss[1] = dot(weights, distances) - eos.alpha * EntropicLearning.entropy(weights)
+    end
 
     # --- Main Optimisation Loop ---
     @timeit to "Training" begin
@@ -227,9 +221,9 @@ function _fit(eos::EOSWrapper, verbosity::Int, X, y=nothing)
             # Increment iteration counter
             iterations += 1
 
-            # θ-step: Fit model with current weights - TODO: use update if it is available
-            @timeit to "inner_fit" inner_fitresult, inner_cache, inner_report = MMI.fit(
-                eos.model, verbosity - 1, fit_args...
+            # θ-step: Fit model with current weights
+            @timeit to "inner_fit" inner_fitresult, inner_cache, inner_report = MMI.update(
+                eos.model, verbosity - 1, inner_fitresult, inner_cache, args..., weights
             )
 
             # Get distances from fitted model using reformatted data - TODO: use mutating version if it is available
@@ -240,30 +234,17 @@ function _fit(eos::EOSWrapper, verbosity::Int, X, y=nothing)
             # w-step: Update weights using closed-form solution
             @timeit to "update_weights" EntropicLearning.update_weights!(weights, distances, eos.alpha)
 
-            eSPA_loss = EntropicLearning.eSPA.calc_loss(
-                X_mat, Pi_mat, inner_fitresult.C, inner_fitresult.W, inner_fitresult.L, inner_fitresult.G, eos.model.epsC, eos.model.epsW, weights
-            )
-            # TODO: may need to add another function:
-            # eos_loss(eos.model, inner_fitresult, distances, weights, args...)
-            # the default behaviour should be to take the distances and then return
-            # dot(weights, distances)
-            # Users can override this by defining a custom function that returns the loss
-            # for their model.
-            # Alternatively, for iterative models we could call a single update step,
-            # maybe this fixes the issue?
-
             # Compute objective function for convergence check
-            @timeit to "loss" loss[iter] = eSPA_loss - eos.alpha * EntropicLearning.entropy(weights)
-                # dot(weights, distances) - eos.alpha * EntropicLearning.entropy(weights)
+            @timeit to "loss" loss[iter + 1] = eos_loss(eos.model, distances, weights, inner_report, inner_fitresult, inner_cache) - eos.alpha * EntropicLearning.entropy(weights)
 
             # Check if loss function has increased
-            if iter > 1 && loss[iter] - loss[iter - 1] > eps(Tf)
+            if loss[iter + 1] - loss[iter] > eps(Tf)
                 verbosity > 0 &&
-                    @warn "Loss function has increased at iteration $iter by $(loss[iter] - loss[iter-1])"
+                    @warn "Loss function has increased at iteration $iter by $(loss[iter + 1] - loss[iter])"
             end
 
             # Check convergence
-            if iter > 1 && abs((loss[iter] - loss[iter - 1]) / loss[iter]) <= eos.tol
+            if abs((loss[iter + 1] - loss[iter]) / loss[iter]) <= eos.tol
                 break
             end
         end
@@ -277,7 +258,7 @@ function _fit(eos::EOSWrapper, verbosity::Int, X, y=nothing)
     fitresult = EOSFitResult(inner_fitresult, weights)
     report = (
         iterations=iterations,
-        loss=loss[1:iterations],
+        loss=loss[1:iterations + 1],
         timings=to,
         ESS=EntropicLearning.effective_dimension(weights),
         inner_report=inner_report,
@@ -285,6 +266,16 @@ function _fit(eos::EOSWrapper, verbosity::Int, X, y=nothing)
     cache = inner_cache
 
     return (fitresult, cache, report)
+end
+
+# Helper function to get the loss from the inner model - TODO: add documentation in case users need to override this
+function eos_loss(model, distances::AbstractVector, weights::AbstractVector, report, args...)
+    if MMI.supports_training_losses(typeof(model))
+        l = MMI.training_losses(model, report)[end]
+    else
+        l = dot(weights, distances)
+    end
+    return l
 end
 
 # ==============================================================================
