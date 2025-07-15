@@ -373,20 +373,41 @@ end
 # ==============================================================================
 # TODO: explore whether we should also add the cross-entropy term to the distances
 function EntropicLearning.eos_distances(::eSPAClassifier, fitresult, X, args...)
+    Tf = eltype(X)
     # Extract the model parameters from the fitresult
     C = fitresult.C
     W = fitresult.W
-    G = fitresult.G
-    # Pre-compute C × Γ
-    CG = C * G
+    # L = fitresult.L
+    # # Get dimensions
+    # T_instances = size(X, 2)
+    # K_clusters = size(C, 2)
+    # M_classes = size(L, 1)
+    G = fitresult.G # TODO: use this if P is provided and size(G, 2) == size(X, 2)
+    # G = sparse(
+    #     rand(1:K_clusters, T_instances),
+    #     1:T_instances,
+    #     ones(Bool, T_instances),
+    #     K_clusters,
+    #     T_instances,
+    # )
+    # weights = fill(Tf(1 / T_instances), T_instances)
+    # P = Matrix{Tf}(undef, M_classes, T_instances) # TODO: use P if it is available
+
+    # # Update Γ
+    # update_G!(G, X, P, C, W, L, Tf(0.0), weights)
+    # Pre-compute C × Γ # TODO: need to re-compute G because X may not be the same as the training data
+    # CG = view(C, :, G.rowval) #C * G
     # Calculate the discretisation error (per sample)
-    disc_error = zeros(eltype(X), size(X, 2))  # Assumes X is a D×T matrix
+    disc_error = zeros(Tf, size(X, 2))  # Assumes X is a D×T matrix
     @inbounds for t in axes(X, 2)
-        temp = zero(eltype(X))  # Cache current value for sum
+        k = G.rowval[t]
+        temp = zero(Tf)  # Cache current value for sum
         @simd for d in axes(X, 1)
-            temp += W[d] * (X[d, t] - CG[d, t])^2
+            temp += W[d] * (X[d, t] - C[d, k])^2
         end
         disc_error[t] = temp # Store result back to disc_error
     end
     return disc_error
 end
+
+# TODO: override EntropicLearning.eos_loss

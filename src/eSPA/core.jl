@@ -314,8 +314,8 @@ function _fit!(
     exceeded = check_iter(iter, model.max_iter, verbosity)
 
     # --- Unbiasing step ---
-    if !exceeded
-        @timeit to "Unbias" begin
+    @timeit to "Unbias" begin
+        if !exceeded && model.unbias
             # Unbias Γ
             update_G!(G, X, P, C, W, L, Tf(0.0), weights)
 
@@ -367,8 +367,8 @@ end
 
 # Function to check if the maximum number of iterations has been reached
 function check_iter(iter::Int, max_iter::Int, verbosity::Int; context::String="")
-    exceeded = iter >= max_iter
-    if verbosity > 0 && exceeded
+    exceeded = (iter >= max_iter)
+    if verbosity > 0 && exceeded && max_iter > 1
         msg = isempty(context) ? "" : " in $context"
         @warn "Maximum number of iterations reached$msg"
     end

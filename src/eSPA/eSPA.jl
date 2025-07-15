@@ -24,6 +24,7 @@ MMI.@mlj_model mutable struct eSPAClassifier <: MMI.Probabilistic
     epsW::Float64 = 1e-1::(_ > 0.0)
     kpp_init::Bool = true::(_ in (true, false))
     mi_init::Bool = true::(_ in (true, false))
+    unbias::Bool = true::(_ in (true, false))
     max_iter::Int = 200::(_ > 0)
     tol::Float64 = 1e-8::(_ > 0.0)
     random_state::Union{AbstractRNG,Integer} = Random.default_rng()
@@ -240,6 +241,9 @@ Train the machine with `fit!(mach, rows=...)`.
 - `mi_init::Bool = true`: If `true`, feature weights `W` are initialised using the mutual
   information between features and classes. If `false`, they are initialised randomly and
   then normalised.
+
+- `unbias::Bool = true`: If `true`, performs an unbiasing step after the main optimisation loop to
+  recalculate cluster assignments without the influence of `epsC`.
 
 - `max_iter::Int = 200`: Maximum number of iterations for the main optimisation loop.
 
