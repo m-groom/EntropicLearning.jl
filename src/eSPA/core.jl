@@ -4,11 +4,12 @@
 function initialise(
     model::eSPAClassifier,
     X::AbstractMatrix{Tf},
+    P::AbstractMatrix{Tf},
     y::AbstractVector{Ti},
-    D_features::Int,
-    T_instances::Int,
-    M_classes::Int,
 ) where {Tf<:AbstractFloat,Ti<:Integer}
+    # Get dimensions
+    D_features, T_instances = size(X)
+
     # Get number of clusters
     K_clusters = model.K
     @assert K_clusters <= T_instances (
@@ -20,36 +21,29 @@ function initialise(
 
     # Initialise the feature importance vector
     W = zeros(Tf, D_features)
-    if isfinite(model.epsW)
-        if model.mi_init
-            # Initialise W[d] using the mutural information between feature d and y
-            @inbounds for d in 1:D_features
-                W[d] = mi_continuous_discrete(view(X, d, :), y; n_neighbors=3, rng=rng)
-            end
-        else
-            rand!(rng, W)
+    if model.mi_init && isfinite(model.epsW)
+        # Initialise W[d] using the mutural information between feature d and y
+        @inbounds for d in 1:D_features
+            W[d] = mi_continuous_discrete(view(X, d, :), y; n_neighbors=3, rng=rng)
         end
-        EntropicLearning.normalise!(W)
     else
-        fill!(W, Tf(1.0) / D_features)
+        fill!(W, Tf(1 / D_features))
     end
+    EntropicLearning.normalise!(W)
 
     # Initialise the centroid matrix
     C = zeros(Tf, D_features, K_clusters)
     if model.kpp_init   # Use k-means++ to initialise the centroids
         iseeds = Vector{Int}(undef, K_clusters)
-        if model.mi_init    # We already have a somewhat informative W
-            initseeds!(iseeds, KmppAlg(), X, WeightedSqEuclidean(W); rng=rng)
-        else
-            initseeds!(iseeds, KmppAlg(), X, SqEuclidean(); rng=rng)
-        end
+        initseeds!(iseeds, KmppAlg(), X, WeightedSqEuclidean(W); rng=rng)
     else    # Randomly select K data points as centroids
         iseeds = sample(rng, 1:T_instances, K_clusters; replace=false)
     end
     copyseeds!(C, X, iseeds)
 
     # Initialise the conditional probability matrix
-    L = rand(rng, Tf, M_classes, K_clusters)
+    priors = vec(sum(P; dims=2) ./ T_instances)
+    L = repeat(priors, 1, K_clusters)
     EntropicLearning.left_stochastic!(L)
 
     # Initialise the affiliation matrix
@@ -95,10 +89,8 @@ function update_G!(
     if epsC > 0
         # Compute the classification error term
         logLP = Matrix{Tf}(undef, K_clusters, T_instances)  # logLP = ε_C × log.(Λ)' × Π
-        # For now the weights only modify the discretisation error
-        prefactor = Tf(epsC / T_instances)  # TODO: modify this for weighted case
         LinearAlgebra.BLAS.gemm!(
-            'T', 'N', prefactor, EntropicLearning.safelog(L; tol=eps(Tf)), P, Tf(0.0), logLP
+            'T', 'N', Tf(epsC / T_instances), EntropicLearning.safelog(L; tol=eps(Tf)), P, Tf(0.0), logLP
         )
 
         # Subtract the classification error term from the discretisation error term
@@ -240,7 +232,7 @@ function calc_loss(
         disc_error += weights[t] * temp
     end
 
-    # Calculate the classification error - TODO: include contribution from weights
+    # Calculate the classification error
     @inbounds LG = view(L, :, G.rowval)   # LG = Λ × Γ
     class_error = Tf(epsC / T_instances) * EntropicLearning.cross_entropy(P, LG; tol=eps(Tf))
 
