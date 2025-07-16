@@ -8,6 +8,27 @@ const MMI = MLJModelInterface
 
 export MinMaxScaler, QuantileTransformer
 
+######### Utility Functions ##########
+
+function _validate_column_match(input_col_names, training_features)
+    input_cols = Set(input_col_names)
+    training_cols = Set(training_features)
+    
+    missing_cols = setdiff(training_cols, input_cols)
+    extra_cols = setdiff(input_cols, training_cols)
+    
+    if !isempty(missing_cols) || !isempty(extra_cols)
+        error_msg = "Column mismatch between input and training data. "
+        if !isempty(missing_cols)
+            error_msg *= "Missing columns: $(collect(missing_cols)). "
+        end
+        if !isempty(extra_cols)
+            error_msg *= "Extra columns: $(collect(extra_cols)). "
+        end
+        error(error_msg)
+    end
+end
+
 ######### MinMaxScaler ##########
 
 mutable struct MinMaxScaler <: MMI.Unsupervised
@@ -53,26 +74,33 @@ function MMI.fit(transformer::MinMaxScaler, verbosity::Int, X)
         end
     end
 
-    fitresult = (mins=all_mins, maxs=all_maxs)
+    fitresult = (mins=all_mins, maxs=all_maxs, features=col_names)
     cache = nothing # No cache needed
-    report = nothing # TODO: return names of features that were scaled
+    report = nothing
 
     return fitresult, cache, report
 end
 
 # transform method: applies the scaling
-function MMI.transform(transformer::MinMaxScaler, fitresult, X)
-    col_names = Tables.columnnames(X)
+function MMI.transform(transformer::MinMaxScaler, fitresult, Xnew)
+    col_names = Tables.columnnames(Xnew)
     data_mins = fitresult.mins
     data_maxs = fitresult.maxs
+    features = fitresult.features
+
+    # Validate that input columns exactly match training columns
+    _validate_column_match(col_names, features)
+
+    # Create mapping from feature name to index in training data
+    feature_to_idx = Dict(feat => i for (i, feat) in enumerate(features))
 
     f_min, f_max = transformer.feature_range
     f_scale = f_max - f_min
 
     scaled_columns = Vector{AbstractVector{Float64}}()
 
-    for (j, name) in enumerate(col_names)
-        col_data_abstract = Tables.getcolumn(X, name)
+    for name in col_names
+        col_data_abstract = Tables.getcolumn(Xnew, name)
         # Avoid collect if already an AbstractVector to reduce allocations
         col_vector = if col_data_abstract isa AbstractVector
             col_data_abstract
@@ -80,8 +108,10 @@ function MMI.transform(transformer::MinMaxScaler, fitresult, X)
             collect(col_data_abstract)
         end
 
-        current_data_min = data_mins[j]
-        current_data_max = data_maxs[j]
+        # Use feature name to get correct min/max values
+        feature_idx = feature_to_idx[name]
+        current_data_min = data_mins[feature_idx]
+        current_data_max = data_maxs[feature_idx]
         data_range = current_data_max - current_data_min
 
         scaled_col_vector = similar(col_vector, Float64)
@@ -109,13 +139,20 @@ function MMI.inverse_transform(transformer::MinMaxScaler, fitresult, Xscaled)
     col_names = Tables.columnnames(Xscaled)
     data_mins = fitresult.mins
     data_maxs = fitresult.maxs
+    features = fitresult.features
+
+    # Validate that input columns exactly match training columns
+    _validate_column_match(col_names, features)
+
+    # Create mapping from feature name to index in training data
+    feature_to_idx = Dict(feat => i for (i, feat) in enumerate(features))
 
     f_min, f_max = transformer.feature_range
     f_scale = f_max - f_min
 
     restored_columns = Vector{AbstractVector{Float64}}()
 
-    for (j, name) in enumerate(col_names)
+    for name in col_names
         scaled_col_data_abstract = Tables.getcolumn(Xscaled, name)
         scaled_col_vector = if scaled_col_data_abstract isa AbstractVector
             scaled_col_data_abstract
@@ -123,8 +160,10 @@ function MMI.inverse_transform(transformer::MinMaxScaler, fitresult, Xscaled)
             collect(scaled_col_data_abstract)
         end
 
-        current_data_min = data_mins[j]
-        current_data_max = data_maxs[j]
+        # Use feature name to get correct min/max values
+        feature_idx = feature_to_idx[name]
+        current_data_min = data_mins[feature_idx]
+        current_data_max = data_maxs[feature_idx]
         data_range = current_data_max - current_data_min
 
         restored_col_vector = similar(scaled_col_vector, Float64)
@@ -151,7 +190,7 @@ function MMI.inverse_transform(transformer::MinMaxScaler, fitresult, Xscaled)
 end
 
 # Fitted parameters
-function MMI.fitted_params(::MinMaxScaler, fitresult) # TODO: also return names of features that were scaled
+function MMI.fitted_params(::MinMaxScaler, fitresult)
     return (min_values_per_feature=fitresult.mins, max_values_per_feature=fitresult.maxs)
 end
 
@@ -207,7 +246,7 @@ function MMI.fit(transformer::QuantileTransformer, verbosity::Int, X)
         end
     end
 
-    fitresult = (quantiles_list=quantiles_per_column, col_names=col_names)
+    fitresult = (quantiles_list=quantiles_per_column, features=col_names)
     cache = nothing
     report = nothing
 
@@ -216,16 +255,19 @@ end
 
 function MMI.transform(transformer::QuantileTransformer, fitresult, Xnew)
     Xnew_col_names = Tables.columnnames(Xnew)
-    if Xnew_col_names != fitresult.col_names
-        error("Column names in Xnew do not match column names from fitting.")
-    end
+    
+    # Validate that input columns exactly match training columns
+    _validate_column_match(Xnew_col_names, fitresult.features)
+
+    # Create mapping from feature name to index in training data
+    feature_to_idx = Dict(feat => i for (i, feat) in enumerate(fitresult.features))
 
     min_range, max_range = transformer.feature_range
     range_span = max_range - min_range
 
     transformed_cols = Vector{AbstractVector{Float64}}()
 
-    for (j, name) in enumerate(Xnew_col_names)
+    for name in Xnew_col_names
         col_data_abstract = Tables.getcolumn(Xnew, name)
         # Avoid collect if already an AbstractVector
         col_vector = if col_data_abstract isa AbstractVector
@@ -234,13 +276,9 @@ function MMI.transform(transformer::QuantileTransformer, fitresult, Xnew)
             collect(col_data_abstract)
         end
 
-        # Ensure fitresult.quantiles_list has an entry for j
-        if j > length(fitresult.quantiles_list)
-            error(
-                "Mismatch in column count or order compared to fit data for column: $name"
-            )
-        end
-        current_quantiles = fitresult.quantiles_list[j]
+        # Use feature name to get correct quantiles
+        feature_idx = feature_to_idx[name]
+        current_quantiles = fitresult.quantiles_list[feature_idx]
         n_quantiles = length(current_quantiles)
 
         new_col = similar(col_vector, Float64)
@@ -302,7 +340,7 @@ function MMI.transform(transformer::QuantileTransformer, fitresult, Xnew)
     end
 
     # Reconstruct the table with the original column names from fitting
-    output_col_names = fitresult.col_names
+    output_col_names = fitresult.features
     if length(transformed_cols) != length(output_col_names)
         error(
             "Internal error: Number of transformed columns does not match number of " *
@@ -315,9 +353,12 @@ end
 
 function MMI.inverse_transform(transformer::QuantileTransformer, fitresult, Xtransformed)
     Xtransformed_col_names = Tables.columnnames(Xtransformed)
-    if Xtransformed_col_names != fitresult.col_names
-        error("Column names in Xtransformed do not match column names from fitting.")
-    end
+    
+    # Validate that input columns exactly match training columns
+    _validate_column_match(Xtransformed_col_names, fitresult.features)
+
+    # Create mapping from feature name to index in training data
+    feature_to_idx = Dict(feat => i for (i, feat) in enumerate(fitresult.features))
 
     min_range, max_range = transformer.feature_range
     range_span = max_range - min_range
@@ -326,7 +367,7 @@ function MMI.inverse_transform(transformer::QuantileTransformer, fitresult, Xtra
 
     original_cols = Vector{AbstractVector{Float64}}()
 
-    for (j, name) in enumerate(Xtransformed_col_names)
+    for name in Xtransformed_col_names
         col_data_abstract = Tables.getcolumn(Xtransformed, name)
         # Avoid collect if already an AbstractVector
         col_vector = if col_data_abstract isa AbstractVector
@@ -335,12 +376,9 @@ function MMI.inverse_transform(transformer::QuantileTransformer, fitresult, Xtra
             collect(col_data_abstract)
         end
 
-        if j > length(fitresult.quantiles_list)
-            error(
-                "Mismatch in column count or order for inverse_transform for column: $name"
-            )
-        end
-        current_quantiles = fitresult.quantiles_list[j]
+        # Use feature name to get correct quantiles
+        feature_idx = feature_to_idx[name]
+        current_quantiles = fitresult.quantiles_list[feature_idx]
         n_quantiles = length(current_quantiles)
 
         new_col = similar(col_vector, Float64)
@@ -391,7 +429,7 @@ function MMI.inverse_transform(transformer::QuantileTransformer, fitresult, Xtra
         push!(original_cols, new_col)
     end
 
-    output_col_names = fitresult.col_names
+    output_col_names = fitresult.features
     if length(original_cols) != length(output_col_names)
         error(
             "Internal error: Number of inverse_transformed columns " *
@@ -404,7 +442,7 @@ end
 
 # Fitted parameters
 function MMI.fitted_params(::QuantileTransformer, fitresult)
-    return (quantiles_list=fitresult.quantiles_list, col_names=fitresult.col_names)
+    return (quantiles_list=fitresult.quantiles_list,)
 end
 
 # MLJ traits
