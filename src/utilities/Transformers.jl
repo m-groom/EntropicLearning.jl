@@ -8,6 +8,10 @@ const MMI = MLJModelInterface
 
 export MinMaxScaler, QuantileTransformer
 
+######### Constants ##########
+
+const MIDPOINT_PROBABILITY = 0.5
+
 ######### Utility Functions ##########
 
 function _validate_column_match(input_col_names, training_features)
@@ -56,6 +60,14 @@ function _get_promoted_eltype(table)
     return promote_type(col_types...)
 end
 
+function _validate_feature_range(feature_range::Tuple{Float64,Float64})
+    if feature_range[1] > feature_range[2]
+        return "Upper bound of feature_range ($(feature_range[2])) must be greater than or equal to the lower bound ($(feature_range[1])). Resetting to (0.0, 1.0)."
+    else
+        return ""
+    end
+end
+
 ######### MinMaxScaler ##########
 
 mutable struct MinMaxScaler <: MMI.Unsupervised
@@ -71,9 +83,8 @@ function MinMaxScaler(; feature_range=(0.0, 1.0))
 end
 
 function MMI.clean!(transformer::MinMaxScaler)
-    err = ""
-    if transformer.feature_range[1] > transformer.feature_range[2]
-        err *= "Upper bound of feature_range ($(transformer.feature_range[2])) must be greater than or equal to the lower bound ($(transformer.feature_range[1])). Resetting to (0.0, 1.0)."
+    err = _validate_feature_range(transformer.feature_range)
+    if !isempty(err)
         transformer.feature_range = (0.0, 1.0)
     end
     return err
@@ -243,9 +254,8 @@ function QuantileTransformer(; feature_range=(0.0, 1.0))
 end
 
 function MMI.clean!(transformer::QuantileTransformer)
-    err = ""
-    if transformer.feature_range[1] > transformer.feature_range[2]
-        err *= "Upper bound of feature_range ($(transformer.feature_range[2])) must be greater than or equal to the lower bound ($(transformer.feature_range[1])). Resetting to (0.0, 1.0)."
+    err = _validate_feature_range(transformer.feature_range)
+    if !isempty(err)
         transformer.feature_range = (0.0, 1.0)
     end
     return err
@@ -311,19 +321,19 @@ function MMI.transform(transformer::QuantileTransformer, fitresult, Xnew)
         new_col = similar(col_vector, T)
 
         if n_quantiles == 0
-            fill!(new_col, (min_range + max_range) * 0.5)
+            fill!(new_col, (min_range + max_range) * MIDPOINT_PROBABILITY)
         elseif n_quantiles == 1
             q_val = current_quantiles[1]
             @inbounds for i in eachindex(col_vector)
                 val = float(col_vector[i])
                 p = if !isfinite(val)
-                    0.5
+                    MIDPOINT_PROBABILITY
                 elseif val < q_val
                     0.0
                 elseif val > q_val
                     1.0
                 else # val == q_val
-                    0.5 # Convention for single quantile: map to midpoint
+                    MIDPOINT_PROBABILITY # Convention for single quantile: map to midpoint
                 end
                 new_col[i] = p * range_span + min_range
             end
@@ -338,7 +348,7 @@ function MMI.transform(transformer::QuantileTransformer, fitresult, Xnew)
                 p = 0.0
 
                 if !isfinite(val)
-                    p = 0.5 # Convention for non-finite values: map to midpoint of target range
+                    p = MIDPOINT_PROBABILITY # Convention for non-finite values: map to midpoint of target range
                 elseif val <= q_min
                     p = 0.0
                 elseif val >= q_max
@@ -421,8 +431,8 @@ function MMI.inverse_transform(transformer::QuantileTransformer, fitresult, Xtra
                     continue
                 end
 
-                if range_span == 0 # min_range == max_range: use 0.5, implying the middle of the ECDF.
-                    p = 0.5
+                if range_span == 0 # min_range == max_range: use MIDPOINT_PROBABILITY, implying the middle of the ECDF.
+                    p = MIDPOINT_PROBABILITY
                 else
                     p = (s_val - min_range) * inv_range_span
                 end
