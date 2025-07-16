@@ -95,7 +95,7 @@ function compute_mi_cd(
             end
         else
             # Single point labels get count but no valid k
-            @inbounds for idx in label_indices
+            @inbounds @simd for idx in label_indices
                 label_counts[idx] = count
             end
         end
@@ -132,7 +132,7 @@ function compute_mi_cd(
     end
 
     # Apply nextafter towards zero to radius
-    @inbounds @simd for i in eachindex(radius_filtered)
+    @inbounds for i in eachindex(radius_filtered)
         if radius_filtered[i] > 0
             radius_filtered[i] = prevfloat(radius_filtered[i])
         end
@@ -249,8 +249,6 @@ Ross (2014) estimator designed for mixed continuous-discrete data.
 # References
 - Ross, B. C. "Mutual Information between Discrete and Continuous Data Sets". PLoS ONE
   9(2), 2014.
-- Kraskov, A., Stögbauer, H. & Grassberger, P. "Estimating mutual information". Phys. Rev.
-  E 69, 066138 (2004).
 """
 function mi_continuous_discrete(
     X::AbstractMatrix{Tf},
@@ -371,39 +369,76 @@ end
 # ==============================================================================
 # Implementation of EOS distances for eSPAClassifier
 # ==============================================================================
-# TODO: explore whether we should also add the cross-entropy term to the distances
-function EntropicLearning.eos_distances(::eSPAClassifier, fitresult, X, args...)
+
+# Fit
+function EntropicLearning.eos_distances(::eSPAClassifier, fitresult, X,
+    P,
+    y_int,
+    column_names,
+    classes,
+    w=nothing)
+
     Tf = eltype(X)
     # Extract the model parameters from the fitresult
     C = fitresult.C
     W = fitresult.W
-    # L = fitresult.L
-    # # Get dimensions
-    # T_instances = size(X, 2)
-    # K_clusters = size(C, 2)
-    # M_classes = size(L, 1)
-    G = fitresult.G # TODO: use this if P is provided and size(G, 2) == size(X, 2)
-    # G = sparse(
-    #     rand(1:K_clusters, T_instances),
-    #     1:T_instances,
-    #     ones(Bool, T_instances),
-    #     K_clusters,
-    #     T_instances,
-    # )
-    # weights = fill(Tf(1 / T_instances), T_instances)
-    # P = Matrix{Tf}(undef, M_classes, T_instances) # TODO: use P if it is available
+    G = fitresult.G
+    @assert size(G, 2) == size(X, 2) "Number of instances in the fitresult does not match the number of instances in the new data"
 
-    # # Update Γ
-    # update_G!(G, X, P, C, W, L, Tf(0.0), weights)
-    # Pre-compute C × Γ # TODO: need to re-compute G because X may not be the same as the training data
-    # CG = view(C, :, G.rowval) #C * G
+    # Pre-compute C × Γ
+    if issparse(G)
+        CG = view(C, :, G.rowval)
+    else
+        CG = C * G
+    end
     # Calculate the discretisation error (per sample)
     disc_error = zeros(Tf, size(X, 2))  # Assumes X is a D×T matrix
     @inbounds for t in axes(X, 2)
-        k = G.rowval[t]
         temp = zero(Tf)  # Cache current value for sum
         @simd for d in axes(X, 1)
-            temp += W[d] * (X[d, t] - C[d, k])^2
+            temp += W[d] * (X[d, t] - CG[d, t])^2
+        end
+        disc_error[t] = temp # Store result back to disc_error
+    end
+    return disc_error
+end
+
+# Predict
+function EntropicLearning.eos_distances(::eSPAClassifier, fitresult, X)
+    Tf = eltype(X)
+    # Extract the model parameters from the fitresult
+    C = fitresult.C
+    W = fitresult.W
+    L = fitresult.L
+    # Get dimensions
+    T_instances = size(X, 2)
+    K_clusters = size(C, 2)
+    M_classes = size(L, 1)
+
+     # Calculate Γ
+    G = sparse(
+        rand(1:K_clusters, T_instances),
+        1:T_instances,
+        ones(Bool, T_instances),
+        K_clusters,
+        T_instances,
+    )
+    weights = fill(Tf(1 / T_instances), T_instances)
+    P = Matrix{Tf}(undef, M_classes, T_instances)
+    update_G!(G, X, P, C, W, L, Tf(0.0), weights)
+
+    # Pre-compute C × Γ
+    if issparse(G)
+        CG = view(C, :, G.rowval)
+    else
+        CG = C * G
+    end
+    # Calculate the discretisation error (per sample)
+    disc_error = zeros(Tf, size(X, 2))  # Assumes X is a D×T matrix
+    @inbounds for t in axes(X, 2)
+        temp = zero(Tf)  # Cache current value for sum
+        @simd for d in axes(X, 1)
+            temp += W[d] * (X[d, t] - CG[d, t])^2
         end
         disc_error[t] = temp # Store result back to disc_error
     end

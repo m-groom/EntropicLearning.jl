@@ -7,7 +7,7 @@
 # ==============================================================================
 
 """
-    eos_distances(model, fitresult, X, [y])
+    eos_distances(model, fitresult, X, args...)
 
 Compute distances/losses for each sample in X using the fitted model.
 
@@ -15,27 +15,27 @@ This function must be implemented for any model to be EOS-compatible.
 For unsupervised models, the function signature is:
     `eos_distances(model, fitresult, X)`
 For supervised models, the function signature is:
-    `eos_distances(model, fitresult, X, y)`
+    `eos_distances(model, fitresult, X, args...)`
 
 # Arguments
 - `model`: The MLJ model instance
 - `fitresult`: The result from fitting the model
 - `X`: Input data
-- `y`: Target data (optional, for supervised models)
+- `args...`: Additional arguments (optional, for supervised models)
 
 # Returns
 - Vector of distances/losses, one per sample
 
 # Example Implementation
 ```julia
-function EntropicLearning.eos_distances(model::eSPAClassifier, fitresult, X, y=nothing)
+function EntropicLearning.eos_distances(model::eSPAClassifier, fitresult, X, args...)
     # Extract the model parameters from the fitresult
     C = fitresult.C
     W = fitresult.W
     G = fitresult.G
 
     # Return the discretisation error (per sample)
-    return sum(W .* (X' .- C * G) .^ 2, dims=1)
+    return sum(W .* (X .- C * G) .^ 2, dims=1)
 end
 ```
 """
@@ -48,8 +48,6 @@ function eos_distances(model, args...)
         "See ?eos_distances for details.",
     )
 end
-
-# TODO: add mutating version of eos_distances
 
 # ==============================================================================
 # Core EOS Functions
@@ -104,16 +102,15 @@ function update_weights!(
 end
 
 """
-    calculate_eos_weights(model, fitresult, X, alpha; y=nothing)
+    calculate_eos_weights(model, fitresult, alpha, args...)
 
-Calculate EOS weights for data (X, [y]) using a fitted model.
+Calculate EOS weights for data (args...) using a fitted model.
 
 # Arguments
 - `model`: A fitted MLJ model that implements `eos_distances`
 - `fitresult`: The result from fitting the model
-- `X`: Input data to calculate weights for
 - `alpha`: Entropic regularisation parameter
-- `y`: Target data (optional, for supervised losses)
+- `args...`: Input data to calculate weights fo
 
 # Returns
 - Vector of weights in [0,1] that sum to 1
@@ -126,18 +123,17 @@ function calculate_eos_weights(model, fitresult, alpha::Real, args...)
 end
 
 """
-    eos_outlier_scores(model, fitresult, X, alpha; y=nothing)
+    eos_outlier_scores(model, fitresult, alpha, args...)
 
-Calculate outlier scores (exp(-T * weights)) for data (X, [y]) using a fitted model.
+Calculate outlier scores (exp(-T * weights)) for data (args...) using a fitted model.
 
 Higher scores indicate more outlying samples.
 
 # Arguments
 - `model`: A fitted MLJ model that implements `eos_distances`
 - `fitresult`: The result from fitting the model
-- `X`: Input data to score
 - `alpha`: Entropic regularisation parameter
-- `y`: Target data (optional)
+- `args...`: Input data to score
 
 # Returns
 - Vector of outlier scores in (0,1]
@@ -213,7 +209,7 @@ function eos_weights(
 end
 
 """
-    calculate_eos_weights(model, fitresult, X, alpha_range, target_Deff; <kwargs>)
+    calculate_eos_weights(model, fitresult, alpha_range, target_Deff, args...; <kwargs>)
 
 Calculate EOS weights for a model by searching for an `alpha` that yields a target effective
 dimension `target_Deff`.
@@ -226,8 +222,7 @@ the corresponding `eos_weights` method to find the `alpha` that matches the `tar
 - `fitresult`: The result from fitting the model.
 - `alpha_range::Tuple{<:Real,<:Real}`: The search range for `alpha`.
 - `target_Deff::Real`: The target effective dimension for the weights.
-- `X`: Input data.
-- `y=nothing`: Target data (for supervised models).
+- `args...`: Input data.
 
 # Keyword Arguments
 - `kwargs...`: Additional keyword arguments forwarded to `eos_weights` (e.g., `normalise`, `atol`, `maxiters`).
@@ -251,7 +246,7 @@ function calculate_eos_weights(
 end
 
 """
-    eos_outlier_scores(model, fitresult, X, alpha_range, target_Deff; <kwargs>)
+    eos_outlier_scores(model, fitresult, alpha_range, target_Deff, args...; <kwargs>)
 
 Calculate EOS outlier scores by searching for an `alpha` that yields a target effective
 dimension `target_Deff`.
@@ -265,8 +260,7 @@ It serves as a convenience wrapper around `calculate_eos_weights`.
 - `fitresult`: The result from fitting the model.
 - `alpha_range::Tuple{<:Real,<:Real}`: The search range for `alpha`.
 - `target_Deff::Real`: The target effective dimension for the *weights*.
-- `X`: Input data.
-- `y=nothing`: Target data (for supervised models).
+- `args...`: Input data.
 
 # Keyword Arguments
 - `kwargs...`: Additional keyword arguments forwarded to `eos_weights` (e.g., `normalise`, `atol`, `maxiters`).
