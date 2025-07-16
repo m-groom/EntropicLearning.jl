@@ -318,61 +318,15 @@ function MMI.transform(transformer::QuantileTransformer, fitresult, Xnew)
         current_quantiles = fitresult.quantiles_list[feature_idx]
         n_quantiles = length(current_quantiles)
 
-        new_col = similar(col_vector, T)
-
-        if n_quantiles == 0
-            fill!(new_col, (min_range + max_range) * MIDPOINT_PROBABILITY)
+        # Process column based on number of quantiles
+        new_col = if n_quantiles == 0
+            _process_empty_quantiles(col_vector, min_range, max_range, T)
         elseif n_quantiles == 1
-            q_val = current_quantiles[1]
-            @inbounds for i in eachindex(col_vector)
-                val = float(col_vector[i])
-                p = if !isfinite(val)
-                    MIDPOINT_PROBABILITY
-                elseif val < q_val
-                    0.0
-                elseif val > q_val
-                    1.0
-                else # val == q_val
-                    MIDPOINT_PROBABILITY # Convention for single quantile: map to midpoint
-                end
-                new_col[i] = p * range_span + min_range
-            end
+            _process_single_quantile(col_vector, current_quantiles[1], min_range, max_range, range_span, T)
         else
-            q_min = current_quantiles[1]
-            q_max = current_quantiles[end]
-            # Pre-calculate inverse of (n_quantiles - 1) to avoid repeated division
-            inv_n_quantiles_minus_1 = 1.0 / (n_quantiles - 1)
-
-            @inbounds for i in eachindex(col_vector)
-                val = float(col_vector[i])
-                p = 0.0
-
-                if !isfinite(val)
-                    p = MIDPOINT_PROBABILITY # Convention for non-finite values: map to midpoint of target range
-                elseif val <= q_min
-                    p = 0.0
-                elseif val >= q_max
-                    p = 1.0
-                else
-                    # Find insertion point
-                    idx = searchsortedlast(current_quantiles, val)
-                    q_i = current_quantiles[idx]
-                    p_i = (idx - 1) * inv_n_quantiles_minus_1
-
-                    if val == q_i # Value falls exactly on a quantile
-                        p = p_i
-                    else # Interpolate between q_i and q_i_plus_1
-                        q_i_plus_1 = current_quantiles[idx + 1]
-                        p_i_plus_1 = idx * inv_n_quantiles_minus_1
-
-                        denominator = q_i_plus_1 - q_i
-                        fraction = denominator == 0.0 ? 0.0 : (val - q_i) / denominator
-                        p = p_i + fraction * (p_i_plus_1 - p_i)
-                    end
-                end
-                new_col[i] = p * range_span + min_range
-            end
+            _process_multiple_quantiles(col_vector, current_quantiles, min_range, max_range, range_span, T)
         end
+
         transformed_cols[col_idx] = new_col
     end
 
@@ -424,24 +378,24 @@ function MMI.inverse_transform(transformer::QuantileTransformer, fitresult, Xtra
             n_quantiles_minus_1 = n_quantiles - 1 # Cache this
             @inbounds for i in eachindex(col_vector)
                 s_val = col_vector[i]
-                p = 0.0
+                p = zero(T)
 
                 if !isfinite(s_val)
                     new_col[i] = NaN
                     continue
                 end
 
-                if range_span == 0 # min_range == max_range: use MIDPOINT_PROBABILITY, implying the middle of the ECDF.
+                if range_span == 0.0 # min_range == max_range: use MIDPOINT_PROBABILITY, implying the middle of the ECDF.
                     p = MIDPOINT_PROBABILITY
                 else
                     p = (s_val - min_range) * inv_range_span
                 end
 
-                p = clamp(p, 0.0, 1.0) # Ensure p is within [0,1]
+                p = clamp(p, zero(T), one(T)) # Ensure p is within [0,1]
 
                 # Interpolate based on p to find the original value from quantiles
                 # idx_float is the fractional index into the quantiles array
-                idx_float = p * n_quantiles_minus_1 + 1.0
+                idx_float = p * n_quantiles_minus_1 + one(T)
 
                 lower_idx = floor(Int, idx_float)
                 upper_idx = ceil(Int, idx_float)
@@ -456,7 +410,7 @@ function MMI.inverse_transform(transformer::QuantileTransformer, fitresult, Xtra
                     weight = idx_float - lower_idx
                     val_lower = current_quantiles[lower_idx]
                     val_upper = current_quantiles[upper_idx]
-                    new_col[i] = (1.0 - weight) * val_lower + weight * val_upper
+                    new_col[i] = (one(T) - weight) * val_lower + weight * val_upper
                 end
             end
         end
@@ -472,6 +426,76 @@ function MMI.inverse_transform(transformer::QuantileTransformer, fitresult, Xtra
     end
 
     return _build_named_tuple(output_col_names, original_cols)
+end
+
+# Helpers
+function _process_empty_quantiles(col_vector, min_range, max_range, T::Type)
+    new_col = similar(col_vector, T)
+    fill!(new_col, (min_range + max_range) * MIDPOINT_PROBABILITY)
+    return new_col
+end
+
+function _process_single_quantile(col_vector, quantile_value, min_range, max_range, range_span, T::Type)
+    new_col = similar(col_vector, T)
+    q_val = quantile_value
+    @inbounds for i in eachindex(col_vector)
+        val = float(col_vector[i])
+        p = if !isfinite(val)
+            MIDPOINT_PROBABILITY
+        elseif val < q_val
+            zero(T)
+        elseif val > q_val
+            one(T)
+        else # val == q_val
+            MIDPOINT_PROBABILITY # Convention for single quantile: map to midpoint
+        end
+        new_col[i] = p * range_span + min_range
+    end
+    return new_col
+end
+
+function _interpolate_quantile_value(val, quantiles, inv_n_quantiles_minus_1, T::Type)
+    # Find insertion point
+    idx = searchsortedlast(quantiles, val)
+    q_i = quantiles[idx]
+    p_i = (idx - 1) * inv_n_quantiles_minus_1
+
+    if val == q_i # Value falls exactly on a quantile
+        return p_i
+    else # Interpolate between q_i and q_i_plus_1
+        q_i_plus_1 = quantiles[idx + 1]
+        p_i_plus_1 = idx * inv_n_quantiles_minus_1
+
+        denominator = q_i_plus_1 - q_i
+        fraction = denominator == zero(T) ? zero(T) : (val - q_i) / denominator
+        return p_i + fraction * (p_i_plus_1 - p_i)
+    end
+end
+
+function _process_multiple_quantiles(col_vector, quantiles, min_range, max_range, range_span, T::Type)
+    new_col = similar(col_vector, T)
+    q_min = quantiles[1]
+    q_max = quantiles[end]
+    n_quantiles = length(quantiles)
+    # Pre-calculate inverse of (n_quantiles - 1) to avoid repeated division
+    inv_n_quantiles_minus_1 = one(T) / (n_quantiles - 1)
+
+    @inbounds for i in eachindex(col_vector)
+        val = float(col_vector[i])
+        p = zero(T)
+
+        if !isfinite(val)
+            p = MIDPOINT_PROBABILITY # Convention for non-finite values: map to midpoint of target range
+        elseif val <= q_min
+            p = zero(T)
+        elseif val >= q_max
+            p = one(T)
+        else
+            p = _interpolate_quantile_value(val, quantiles, inv_n_quantiles_minus_1, T)
+        end
+        new_col[i] = p * range_span + min_range
+    end
+    return new_col
 end
 
 # Fitted parameters
