@@ -504,7 +504,7 @@ end
             )
 
             C, W, L, G = eSPA.initialise(
-                model, X_transposed, y_int, D_features, T_instances, M_classes
+                model, X_transposed, P, y_int
             )
 
             # Test dimensions
@@ -529,7 +529,7 @@ end
         # Test edge case: K=1
         model_k1 = eSPAClassifier(; K=1, random_state=42)
         C, W, L, G = eSPA.initialise(
-            model_k1, X_transposed, y_int, D_features, T_instances, M_classes
+            model_k1, X_transposed, P, y_int
         )
         @test size(C) == (D_features, 1)
         @test all(G.rowval .== 1)  # All points assigned to cluster 1
@@ -539,10 +539,10 @@ end
         model2 = eSPAClassifier(; K=3, random_state=42)
 
         C1, W1, L1, G1 = eSPA.initialise(
-            model1, X_transposed, y_int, D_features, T_instances, M_classes
+            model1, X_transposed, P, y_int
         )
         C2, W2, L2, G2 = eSPA.initialise(
-            model2, X_transposed, y_int, D_features, T_instances, M_classes
+            model2, X_transposed, P, y_int
         )
 
         @test C1 ≈ C2
@@ -555,7 +555,7 @@ end
         # Setup for update function tests
         model = eSPAClassifier(; K=K_clusters, epsC=1e-3, epsW=1e-1, random_state=101)
         C, W, L, G = eSPA.initialise(
-            model, X_transposed, y_int, D_features, T_instances, M_classes
+            model, X_transposed, P, y_int
         )
 
         @testset "update_G! tests" begin
@@ -667,7 +667,7 @@ end
     @testset "3. Loss and Convergence Functions" begin
         model = eSPAClassifier(; K=K_clusters, epsC=1e-3, epsW=1e-1, random_state=123)
         C, W, L, G = eSPA.initialise(
-            model, X_transposed, y_int, D_features, T_instances, M_classes
+            model, X_transposed, P, y_int
         )
 
         @testset "calc_loss tests" begin
@@ -992,7 +992,7 @@ end
         # Setup for weighted update function tests
         model = eSPAClassifier(; K=K_clusters, epsC=1e-3, epsW=1e-1, random_state=101)
         C, W, L, G = eSPA.initialise(
-            model, X_transposed, y_int, D_features, T_instances, M_classes
+            model, X_transposed, P, y_int
         )
 
         @testset "update_G! with random weights" begin

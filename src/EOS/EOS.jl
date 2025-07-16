@@ -20,7 +20,7 @@ mutable struct DeterministicEOSWrapper{M} <: MMI.Deterministic
     alpha::Float64
     tol::Float64
     max_iter::Int
-    # atol::Float64
+    atol::Float64
 end
 
 mutable struct ProbabilisticEOSWrapper{M} <: MMI.Probabilistic
@@ -28,7 +28,7 @@ mutable struct ProbabilisticEOSWrapper{M} <: MMI.Probabilistic
     alpha::Float64
     tol::Float64
     max_iter::Int
-    # atol::Float64
+    atol::Float64
 end
 
 mutable struct UnsupervisedEOSWrapper{M} <: MMI.Unsupervised
@@ -36,7 +36,7 @@ mutable struct UnsupervisedEOSWrapper{M} <: MMI.Unsupervised
     alpha::Float64
     tol::Float64
     max_iter::Int
-    # atol::Float64
+    atol::Float64
 end
 
 # TODO: make MLJ-compliant docstring
@@ -86,7 +86,7 @@ Base.parentmodule(::Type{<:EOSWrapper}) = EOS
 
 # External keyword constructor
 function EOSWrapper(
-    args...; model=nothing, alpha::Real=1.0, tol::Real=1e-6, max_iter::Integer=100
+    args...; model=nothing, alpha::Real=1.0, tol::Real=1e-8, max_iter::Integer=100, atol::Real=1e-6
 )
     length(args) < 2 || throw(ArgumentError("Too many positional arguments"))
 
@@ -103,15 +103,15 @@ function EOSWrapper(
     # Create appropriate wrapper type based on wrapped model type
     if atom isa MMI.Deterministic
         wrapper = DeterministicEOSWrapper{typeof(atom)}(
-            atom, Float64(alpha), Float64(tol), max_iter
+            atom, Float64(alpha), Float64(tol), max_iter, Float64(atol)
         )
     elseif atom isa MMI.Probabilistic
         wrapper = ProbabilisticEOSWrapper{typeof(atom)}(
-            atom, Float64(alpha), Float64(tol), max_iter
+            atom, Float64(alpha), Float64(tol), max_iter, Float64(atol)
         )
     elseif atom isa MMI.Unsupervised
         wrapper = UnsupervisedEOSWrapper{typeof(atom)}(
-            atom, Float64(alpha), Float64(tol), max_iter
+            atom, Float64(alpha), Float64(tol), max_iter, Float64(atol)
         )
     else
         throw(
@@ -120,9 +120,14 @@ function EOSWrapper(
             ),
         )
     end
+    # Check that wrapped model supports weights
+    if !MMI.supports_weights(typeof(wrapper.model))
+        throw(ArgumentError("Wrapped model type $(typeof(wrapper.model)) must support sample weights."))
+    end
 
     message = MMI.clean!(wrapper)
-    isempty(message) || throw(ArgumentError(message))
+    isempty(message) || @warn message
+
     return wrapper
 end
 
@@ -130,17 +135,20 @@ end
 function MMI.clean!(wrapper::EOSWrapper)
     err = ""
     if wrapper.alpha <= 0
-        err *= "alpha must be positive, got $(wrapper.alpha). "
+        err *= "alpha must be positive, got $(wrapper.alpha). Resetting to 1.0."
+        wrapper.alpha = 1.0
     end
     if wrapper.tol <= 0
-        err *= "tol must be positive, got $(wrapper.tol). "
+        err *= "tol must be positive, got $(wrapper.tol). Resetting to 1e-8."
+        wrapper.tol = 1e-8
     end
     if wrapper.max_iter <= 0
-        err *= "max_iter must be positive, got $(wrapper.max_iter). "
+        err *= "max_iter must be positive, got $(wrapper.max_iter). Resetting to 100."
+        wrapper.max_iter = 100
     end
-    # Check that wrapped model supports weights
-    if !MMI.supports_weights(typeof(wrapper.model))
-        err *= "Wrapped model type $(typeof(wrapper.model)) must support sample weights. "
+    if wrapper.atol <= 0
+        err *= "atol must be positive, got $(wrapper.atol). Resetting to 1e-6."
+        wrapper.atol = 1e-6
     end
     return err
 end
@@ -239,7 +247,7 @@ function _fit(eos::EOSWrapper, verbosity::Int, X, y=nothing)
             end
             loss_before = loss_after
 
-            # Get distances from fitted model using reformatted data - TODO: use mutating version if it is available
+            # Get distances from fitted model using reformatted data
             @timeit to "distances" distances .= EntropicLearning.eos_distances(
                 eos.model, inner_fitresult, args...
             )
@@ -348,7 +356,7 @@ end
 function MMI.fitted_params(eos::EOSWrapper, fitresult::EOSFitResult)
     return (
         weights=EntropicLearning.eos_weights(fitresult.distances, eos.alpha),
-        inner_fitted_params=MMI.fitted_params(eos.model, fitresult.inner_fitresult),
+        inner_params=MMI.fitted_params(eos.model, fitresult.inner_fitresult),
     )
 end
 

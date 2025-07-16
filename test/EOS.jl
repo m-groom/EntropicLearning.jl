@@ -244,10 +244,11 @@ end
         @testset "Error handling" begin
             test_model = eSPAClassifier(K=5)
 
-            # Invalid parameters
-            @test_throws ArgumentError EOSWrapper(test_model; alpha=0.0)
-            @test_throws ArgumentError EOSWrapper(test_model; tol=0.0)
-            @test_throws ArgumentError EOSWrapper(test_model; max_iter=0)
+            # Invalid parameters should now warn and reset
+            @test_warn "alpha must be positive" EOSWrapper(test_model; alpha=0.0)
+            @test_warn "tol must be positive" EOSWrapper(test_model; tol=0.0)
+            @test_warn "max_iter must be positive" EOSWrapper(test_model; max_iter=0)
+            @test_warn "atol must be positive" EOSWrapper(test_model; atol=0.0)
 
             # Too many positional arguments
             @test_throws ArgumentError EOSWrapper(test_model, test_model)
@@ -305,7 +306,7 @@ end
             fitted_params = MLJBase.fitted_params(mach)
 
             @test haskey(fitted_params, :weights)
-            @test haskey(fitted_params, :inner_fitted_params)
+            @test haskey(fitted_params, :inner_params)
             @test length(fitted_params.weights) == nrows(X_table)
         end
 
