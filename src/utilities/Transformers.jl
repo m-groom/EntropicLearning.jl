@@ -29,6 +29,26 @@ function _validate_column_match(input_col_names, training_features)
     end
 end
 
+function _extract_column_vector(table, column_name)
+    col_data_abstract = Tables.getcolumn(table, column_name)
+    # Avoid collect if already an AbstractVector to reduce allocations
+    return if col_data_abstract isa AbstractVector
+        col_data_abstract
+    else
+        collect(col_data_abstract)
+    end
+end
+
+function _create_feature_mapping(features)
+    return Dict(feat => i for (i, feat) in enumerate(features))
+end
+
+function _build_named_tuple(column_names, column_vectors)
+    # Convert to symbols if needed (handles both Symbol and String column names)
+    sym_names = column_names isa AbstractVector{Symbol} ? column_names : Symbol.(column_names)
+    return NamedTuple{Tuple(sym_names)}(Tuple(column_vectors))
+end
+
 ######### MinMaxScaler ##########
 
 mutable struct MinMaxScaler <: MMI.Unsupervised
@@ -92,7 +112,7 @@ function MMI.transform(transformer::MinMaxScaler, fitresult, Xnew)
     _validate_column_match(col_names, features)
 
     # Create mapping from feature name to index in training data
-    feature_to_idx = Dict(feat => i for (i, feat) in enumerate(features))
+    feature_to_idx = _create_feature_mapping(features)
 
     f_min, f_max = transformer.feature_range
     f_scale = f_max - f_min
@@ -100,13 +120,7 @@ function MMI.transform(transformer::MinMaxScaler, fitresult, Xnew)
     scaled_columns = Vector{AbstractVector{Float64}}()
 
     for name in col_names
-        col_data_abstract = Tables.getcolumn(Xnew, name)
-        # Avoid collect if already an AbstractVector to reduce allocations
-        col_vector = if col_data_abstract isa AbstractVector
-            col_data_abstract
-        else
-            collect(col_data_abstract)
-        end
+        col_vector = _extract_column_vector(Xnew, name)
 
         # Use feature name to get correct min/max values
         feature_idx = feature_to_idx[name]
@@ -131,7 +145,7 @@ function MMI.transform(transformer::MinMaxScaler, fitresult, Xnew)
         push!(scaled_columns, scaled_col_vector)
     end
 
-    return NamedTuple{Tuple(col_names)}(Tuple(scaled_columns))
+    return _build_named_tuple(col_names, scaled_columns)
 end
 
 # inverse_transform method: reverses the scaling
@@ -145,7 +159,7 @@ function MMI.inverse_transform(transformer::MinMaxScaler, fitresult, Xscaled)
     _validate_column_match(col_names, features)
 
     # Create mapping from feature name to index in training data
-    feature_to_idx = Dict(feat => i for (i, feat) in enumerate(features))
+    feature_to_idx = _create_feature_mapping(features)
 
     f_min, f_max = transformer.feature_range
     f_scale = f_max - f_min
@@ -153,12 +167,7 @@ function MMI.inverse_transform(transformer::MinMaxScaler, fitresult, Xscaled)
     restored_columns = Vector{AbstractVector{Float64}}()
 
     for name in col_names
-        scaled_col_data_abstract = Tables.getcolumn(Xscaled, name)
-        scaled_col_vector = if scaled_col_data_abstract isa AbstractVector
-            scaled_col_data_abstract
-        else
-            collect(scaled_col_data_abstract)
-        end
+        scaled_col_vector = _extract_column_vector(Xscaled, name)
 
         # Use feature name to get correct min/max values
         feature_idx = feature_to_idx[name]
@@ -186,7 +195,7 @@ function MMI.inverse_transform(transformer::MinMaxScaler, fitresult, Xscaled)
         push!(restored_columns, restored_col_vector)
     end
 
-    return NamedTuple{Tuple(col_names)}(Tuple(restored_columns))
+    return _build_named_tuple(col_names, restored_columns)
 end
 
 # Fitted parameters
@@ -260,7 +269,7 @@ function MMI.transform(transformer::QuantileTransformer, fitresult, Xnew)
     _validate_column_match(Xnew_col_names, fitresult.features)
 
     # Create mapping from feature name to index in training data
-    feature_to_idx = Dict(feat => i for (i, feat) in enumerate(fitresult.features))
+    feature_to_idx = _create_feature_mapping(fitresult.features)
 
     min_range, max_range = transformer.feature_range
     range_span = max_range - min_range
@@ -268,13 +277,7 @@ function MMI.transform(transformer::QuantileTransformer, fitresult, Xnew)
     transformed_cols = Vector{AbstractVector{Float64}}()
 
     for name in Xnew_col_names
-        col_data_abstract = Tables.getcolumn(Xnew, name)
-        # Avoid collect if already an AbstractVector
-        col_vector = if col_data_abstract isa AbstractVector
-            col_data_abstract
-        else
-            collect(col_data_abstract)
-        end
+        col_vector = _extract_column_vector(Xnew, name)
 
         # Use feature name to get correct quantiles
         feature_idx = feature_to_idx[name]
@@ -348,7 +351,7 @@ function MMI.transform(transformer::QuantileTransformer, fitresult, Xnew)
         )
     end
 
-    return NamedTuple{Tuple(Symbol.(output_col_names))}(Tuple(transformed_cols))
+    return _build_named_tuple(output_col_names, transformed_cols)
 end
 
 function MMI.inverse_transform(transformer::QuantileTransformer, fitresult, Xtransformed)
@@ -358,7 +361,7 @@ function MMI.inverse_transform(transformer::QuantileTransformer, fitresult, Xtra
     _validate_column_match(Xtransformed_col_names, fitresult.features)
 
     # Create mapping from feature name to index in training data
-    feature_to_idx = Dict(feat => i for (i, feat) in enumerate(fitresult.features))
+    feature_to_idx = _create_feature_mapping(fitresult.features)
 
     min_range, max_range = transformer.feature_range
     range_span = max_range - min_range
@@ -368,13 +371,7 @@ function MMI.inverse_transform(transformer::QuantileTransformer, fitresult, Xtra
     original_cols = Vector{AbstractVector{Float64}}()
 
     for name in Xtransformed_col_names
-        col_data_abstract = Tables.getcolumn(Xtransformed, name)
-        # Avoid collect if already an AbstractVector
-        col_vector = if col_data_abstract isa AbstractVector
-            col_data_abstract
-        else
-            collect(col_data_abstract)
-        end
+        col_vector = _extract_column_vector(Xtransformed, name)
 
         # Use feature name to get correct quantiles
         feature_idx = feature_to_idx[name]
@@ -437,7 +434,7 @@ function MMI.inverse_transform(transformer::QuantileTransformer, fitresult, Xtra
         )
     end
 
-    return NamedTuple{Tuple(Symbol.(output_col_names))}(Tuple(original_cols))
+    return _build_named_tuple(output_col_names, original_cols)
 end
 
 # Fitted parameters
