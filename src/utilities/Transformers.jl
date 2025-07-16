@@ -13,10 +13,10 @@ export MinMaxScaler, QuantileTransformer
 function _validate_column_match(input_col_names, training_features)
     input_cols = Set(input_col_names)
     training_cols = Set(training_features)
-    
+
     missing_cols = setdiff(training_cols, input_cols)
     extra_cols = setdiff(input_cols, training_cols)
-    
+
     if !isempty(missing_cols) || !isempty(extra_cols)
         error_msg = "Column mismatch between input and training data. "
         if !isempty(missing_cols)
@@ -76,21 +76,22 @@ end
 function MMI.fit(transformer::MinMaxScaler, verbosity::Int, X)
     # X is assumed to be a Tables.jl compatible table.
     col_names = Tables.columnnames(X)
-    all_mins = Float64[]
-    all_maxs = Float64[]
+    # Pre-allocate result vectors with known size
+    all_mins = Vector{Float64}(undef, length(col_names))
+    all_maxs = Vector{Float64}(undef, length(col_names))
 
-    for name in col_names
+    for (col_idx, name) in enumerate(col_names)
         col_data = Tables.getcolumn(X, name)
         # Convert to an iterable collection if it's not already one (e.g. a generator) and
         # ensure elements are numbers.
-        col_iterable = collect(col_data)
+        col_iterable = collect(Float64, col_data)
         if isempty(col_iterable)
             # Handle empty columns: use NaN
-            push!(all_mins, NaN)
-            push!(all_maxs, NaN)
+            all_mins[col_idx] = NaN
+            all_maxs[col_idx] = NaN
         else
-            push!(all_mins, Float64(minimum(col_iterable)))
-            push!(all_maxs, Float64(maximum(col_iterable)))
+            all_mins[col_idx] = minimum(col_iterable)
+            all_maxs[col_idx] = maximum(col_iterable)
         end
     end
 
@@ -117,9 +118,10 @@ function MMI.transform(transformer::MinMaxScaler, fitresult, Xnew)
     f_min, f_max = transformer.feature_range
     f_scale = f_max - f_min
 
-    scaled_columns = Vector{AbstractVector{Float64}}()
+    # Pre-allocate result vector with known size
+    scaled_columns = Vector{AbstractVector{Float64}}(undef, length(col_names))
 
-    for name in col_names
+    for (col_idx, name) in enumerate(col_names)
         col_vector = _extract_column_vector(Xnew, name)
 
         # Use feature name to get correct min/max values
@@ -135,14 +137,14 @@ function MMI.transform(transformer::MinMaxScaler, fitresult, Xnew)
             scaled_col_vector .= f_min
         else
             inv_data_range = 1.0 / data_range
-            for i in eachindex(col_vector)
+            @inbounds @simd for i in eachindex(col_vector)
                 # Standardise to [0,1] then scale to feature_range
                 scaled_col_vector[i] =
                     (col_vector[i] - current_data_min) * inv_data_range * f_scale + f_min
             end
         end
 
-        push!(scaled_columns, scaled_col_vector)
+        scaled_columns[col_idx] = scaled_col_vector
     end
 
     return _build_named_tuple(col_names, scaled_columns)
@@ -164,9 +166,10 @@ function MMI.inverse_transform(transformer::MinMaxScaler, fitresult, Xscaled)
     f_min, f_max = transformer.feature_range
     f_scale = f_max - f_min
 
-    restored_columns = Vector{AbstractVector{Float64}}()
+    # Pre-allocate result vector with known size
+    restored_columns = Vector{AbstractVector{Float64}}(undef, length(col_names))
 
-    for name in col_names
+    for (col_idx, name) in enumerate(col_names)
         scaled_col_vector = _extract_column_vector(Xscaled, name)
 
         # Use feature name to get correct min/max values
@@ -186,13 +189,13 @@ function MMI.inverse_transform(transformer::MinMaxScaler, fitresult, Xscaled)
         else
             # Both data_range and f_scale are non-zero.
             inv_f_scale = 1.0 / f_scale
-            for i in eachindex(scaled_col_vector)
+            @inbounds @simd for i in eachindex(scaled_col_vector)
                 # Ensure input to Float64 conversion if elements are not already floats
                 val_01 = (scaled_col_vector[i] - f_min) * inv_f_scale
                 restored_col_vector[i] = val_01 * data_range + current_data_min
             end
         end
-        push!(restored_columns, restored_col_vector)
+        restored_columns[col_idx] = restored_col_vector
     end
 
     return _build_named_tuple(col_names, restored_columns)
@@ -237,21 +240,24 @@ end
 
 function MMI.fit(transformer::QuantileTransformer, verbosity::Int, X)
     col_names = Tables.columnnames(X)
-    quantiles_per_column = Vector{Vector{Float64}}()
+    # Pre-allocate result vector with known size
+    quantiles_per_column = Vector{Vector{Float64}}(undef, length(col_names))
 
-    for name in col_names
+    for (col_idx, name) in enumerate(col_names)
         col_data = Tables.getcolumn(X, name)
         # Convert to an iterable collection and ensure elements are numbers.
-        col_iterable = collect(
-            eltype(col_data) <: AbstractFloat ? col_data : float.(col_data)
-        )
+        col_iterable = if eltype(col_data) <: AbstractFloat
+            collect(Float64, col_data)
+        else
+            Float64.(collect(col_data))
+        end
         # Filter non-finite values
         numeric_col_data = filter(isfinite, col_iterable)
 
         if isempty(numeric_col_data)
-            push!(quantiles_per_column, Float64[]) # Store empty if no valid data
+            quantiles_per_column[col_idx] = Float64[] # Store empty if no valid data
         else
-            push!(quantiles_per_column, sort(unique(numeric_col_data)))
+            quantiles_per_column[col_idx] = sort(unique(numeric_col_data))
         end
     end
 
@@ -264,7 +270,7 @@ end
 
 function MMI.transform(transformer::QuantileTransformer, fitresult, Xnew)
     Xnew_col_names = Tables.columnnames(Xnew)
-    
+
     # Validate that input columns exactly match training columns
     _validate_column_match(Xnew_col_names, fitresult.features)
 
@@ -274,9 +280,10 @@ function MMI.transform(transformer::QuantileTransformer, fitresult, Xnew)
     min_range, max_range = transformer.feature_range
     range_span = max_range - min_range
 
-    transformed_cols = Vector{AbstractVector{Float64}}()
+    # Pre-allocate result vector with known size
+    transformed_cols = Vector{AbstractVector{Float64}}(undef, length(Xnew_col_names))
 
-    for name in Xnew_col_names
+    for (col_idx, name) in enumerate(Xnew_col_names)
         col_vector = _extract_column_vector(Xnew, name)
 
         # Use feature name to get correct quantiles
@@ -290,7 +297,7 @@ function MMI.transform(transformer::QuantileTransformer, fitresult, Xnew)
             fill!(new_col, (min_range + max_range) * 0.5)
         elseif n_quantiles == 1
             q_val = current_quantiles[1]
-            for i in eachindex(col_vector)
+            @inbounds for i in eachindex(col_vector)
                 val = float(col_vector[i])
                 p = if !isfinite(val)
                     0.5
@@ -309,7 +316,7 @@ function MMI.transform(transformer::QuantileTransformer, fitresult, Xnew)
             # Pre-calculate inverse of (n_quantiles - 1) to avoid repeated division
             inv_n_quantiles_minus_1 = 1.0 / (n_quantiles - 1)
 
-            for i in eachindex(col_vector)
+            @inbounds for i in eachindex(col_vector)
                 val = float(col_vector[i])
                 p = 0.0
 
@@ -339,7 +346,7 @@ function MMI.transform(transformer::QuantileTransformer, fitresult, Xnew)
                 new_col[i] = p * range_span + min_range
             end
         end
-        push!(transformed_cols, new_col)
+        transformed_cols[col_idx] = new_col
     end
 
     # Reconstruct the table with the original column names from fitting
@@ -356,7 +363,7 @@ end
 
 function MMI.inverse_transform(transformer::QuantileTransformer, fitresult, Xtransformed)
     Xtransformed_col_names = Tables.columnnames(Xtransformed)
-    
+
     # Validate that input columns exactly match training columns
     _validate_column_match(Xtransformed_col_names, fitresult.features)
 
@@ -368,9 +375,10 @@ function MMI.inverse_transform(transformer::QuantileTransformer, fitresult, Xtra
     # Handle range_span == 0 separately to avoid division by zero with inv_range_span
     inv_range_span = range_span == 0.0 ? 0.0 : 1.0 / range_span # Will be used if range_span != 0
 
-    original_cols = Vector{AbstractVector{Float64}}()
+    # Pre-allocate result vector with known size
+    original_cols = Vector{AbstractVector{Float64}}(undef, length(Xtransformed_col_names))
 
-    for name in Xtransformed_col_names
+    for (col_idx, name) in enumerate(Xtransformed_col_names)
         col_vector = _extract_column_vector(Xtransformed, name)
 
         # Use feature name to get correct quantiles
@@ -385,7 +393,7 @@ function MMI.inverse_transform(transformer::QuantileTransformer, fitresult, Xtra
             fill!(new_col, current_quantiles[1]) # All values map to the single quantile
         else
             n_quantiles_minus_1 = n_quantiles - 1 # Cache this
-            for i in eachindex(col_vector)
+            @inbounds for i in eachindex(col_vector)
                 s_val = col_vector[i]
                 p = 0.0
 
@@ -423,7 +431,7 @@ function MMI.inverse_transform(transformer::QuantileTransformer, fitresult, Xtra
                 end
             end
         end
-        push!(original_cols, new_col)
+        original_cols[col_idx] = new_col
     end
 
     output_col_names = fitresult.features
