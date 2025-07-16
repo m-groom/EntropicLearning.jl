@@ -6,7 +6,7 @@ using LinearAlgebra
 using Random
 using SparseArrays
 using Clustering: initseeds!, KmppAlg, copyseeds!
-using Clustering.Distances: SqEuclidean, WeightedSqEuclidean
+using Clustering.Distances: WeightedSqEuclidean
 using TimerOutputs
 using NearestNeighbors: KDTree, knn, inrange, Chebyshev
 using SpecialFunctions: digamma
@@ -75,7 +75,7 @@ function MMI.fit(
 
     # --- Initialisation ---
     @timeit to "Initialisation" begin
-        C, W, L, G = initialise(model, X_mat, y_int, D_features, T_instances, M_classes)
+        C, W, L, G = initialise(model, X_mat, Pi_mat, y_int)
     end
 
     # --- Training ---
@@ -235,7 +235,7 @@ Train the machine with `fit!(mach, rows=...)`.
 
 - `epsW::Float64 = 1e-1`: Regularisation parameter for the entropy of the feature weights.
 
-- `kpp_init::Bool = true`: If `true`, uses k-means++ for centroid initialization. If `false`,
+- `kpp_init::Bool = true`: If `true`, uses k-means++ for centroid initialisation. If `false`,
   centroids are initialised by randomly selecting data points.
 
 - `mi_init::Bool = true`: If `true`, feature weights `W` are initialised using the mutual
@@ -257,12 +257,7 @@ Train the machine with `fit!(mach, rows=...)`.
 # Operations
 
 - `predict(mach, Xnew)`: return probabilistic predictions of the target given
-  features `Xnew` having the same scitype as `X` above. Predictions are based on
-  learned cluster assignments and conditional probabilities.
-
-- `predict_mode(mach, Xnew)`: instead return the mode (most likely class) of each
-  prediction above.
-
+  features `Xnew` having the same scitype as `X` above.
 
 # Fitted parameters
 
@@ -272,9 +267,7 @@ The fields of `fitted_params(mach)` are:
 
 - `W`: Feature weights vector (D × 1), representing the learned importance of each feature
 
-- `L`: Conditional probabilities matrix (M × K), where M is the number of classes
-
-- `classes`: Vector of unique class labels
+- `L`: Conditional probability matrix (M × K), where M is the number of classes
 
 
 # Report
@@ -287,7 +280,11 @@ The fields of `report(mach)` are:
 
 - `timings`: Timings for each step of the algorithm
 
-- `G`: Cluster assignment matrix (T × K), where T is the number of instances and K is the number of clusters
+- `n_params`: Effective number of parameters in the fitted model
+
+- `classes`: Vector of class labels that were seen during training
+
+- `features`: Vector of feature names
 
 
 # Examples
@@ -319,12 +316,6 @@ fp = fitted_params(mach)
 fp.C                           # learned centroids
 fp.W                           # learned feature weights
 fp.L                           # conditional probabilities for each cluster
-report(mach).G                 # cluster assignment matrix
-
-# Example with different initialization
-model2 = eSPA(K=3, kpp_init=false, mi_init=false, random_state=42)
-mach2 = machine(model2, X, y)
-fit!(mach2)
 ```
 
 See also the original references:
