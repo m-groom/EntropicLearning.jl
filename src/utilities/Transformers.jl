@@ -25,7 +25,8 @@ end
 function MMI.clean!(transformer::MinMaxScaler)
     err = ""
     if transformer.feature_range[1] > transformer.feature_range[2]
-        err *= "Upper bound of feature_range ($(transformer.feature_range[2])) must be greater than or equal to the lower bound ($(transformer.feature_range[1]))."
+        err *= "Upper bound of feature_range ($(transformer.feature_range[2])) must be greater than or equal to the lower bound ($(transformer.feature_range[1])). Resetting to (0.0, 1.0)."
+        transformer.feature_range = (0.0, 1.0)
     end
     return err
 end
@@ -180,7 +181,8 @@ end
 function MMI.clean!(transformer::QuantileTransformer)
     err = ""
     if transformer.feature_range[1] > transformer.feature_range[2]
-        err *= "Upper bound of feature_range ($(transformer.feature_range[2])) must be greater than or equal to the lower bound ($(transformer.feature_range[1]))."
+        err *= "Upper bound of feature_range ($(transformer.feature_range[2])) must be greater than or equal to the lower bound ($(transformer.feature_range[1])). Resetting to (0.0, 1.0)."
+        transformer.feature_range = (0.0, 1.0)
     end
     return err
 end
