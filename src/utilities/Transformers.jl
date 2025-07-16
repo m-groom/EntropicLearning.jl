@@ -49,6 +49,13 @@ function _build_named_tuple(column_names, column_vectors)
     return NamedTuple{Tuple(sym_names)}(Tuple(column_vectors))
 end
 
+function _get_promoted_eltype(table)
+    col_names = Tables.columnnames(table)
+    # Get all column types and promote them to find common supertype
+    col_types = [Tables.columntype(table, name) for name in col_names]
+    return promote_type(col_types...)
+end
+
 ######### MinMaxScaler ##########
 
 mutable struct MinMaxScaler <: MMI.Unsupervised
@@ -76,15 +83,17 @@ end
 function MMI.fit(transformer::MinMaxScaler, verbosity::Int, X)
     # X is assumed to be a Tables.jl compatible table.
     col_names = Tables.columnnames(X)
+    # Get promoted element type from all columns
+    T = _get_promoted_eltype(X)
     # Pre-allocate result vectors with known size
-    all_mins = Vector{Float64}(undef, length(col_names))
-    all_maxs = Vector{Float64}(undef, length(col_names))
+    all_mins = Vector{T}(undef, length(col_names))
+    all_maxs = Vector{T}(undef, length(col_names))
 
     for (col_idx, name) in enumerate(col_names)
         col_data = Tables.getcolumn(X, name)
         # Convert to an iterable collection if it's not already one (e.g. a generator) and
         # ensure elements are numbers.
-        col_iterable = collect(Float64, col_data)
+        col_iterable = collect(T, col_data)
         if isempty(col_iterable)
             # Handle empty columns: use NaN
             all_mins[col_idx] = NaN
@@ -115,11 +124,13 @@ function MMI.transform(transformer::MinMaxScaler, fitresult, Xnew)
     # Create mapping from feature name to index in training data
     feature_to_idx = _create_feature_mapping(features)
 
+    # Get promoted element type from input table
+    T = _get_promoted_eltype(Xnew)
     f_min, f_max = transformer.feature_range
     f_scale = f_max - f_min
 
     # Pre-allocate result vector with known size
-    scaled_columns = Vector{AbstractVector{Float64}}(undef, length(col_names))
+    scaled_columns = Vector{AbstractVector{T}}(undef, length(col_names))
 
     for (col_idx, name) in enumerate(col_names)
         col_vector = _extract_column_vector(Xnew, name)
@@ -130,7 +141,7 @@ function MMI.transform(transformer::MinMaxScaler, fitresult, Xnew)
         current_data_max = data_maxs[feature_idx]
         data_range = current_data_max - current_data_min
 
-        scaled_col_vector = similar(col_vector, Float64)
+        scaled_col_vector = similar(col_vector, T)
 
         if data_range == 0.0
             # If data column is constant, map all values to f_min
@@ -163,11 +174,13 @@ function MMI.inverse_transform(transformer::MinMaxScaler, fitresult, Xscaled)
     # Create mapping from feature name to index in training data
     feature_to_idx = _create_feature_mapping(features)
 
+    # Get promoted element type from input table
+    T = _get_promoted_eltype(Xscaled)
     f_min, f_max = transformer.feature_range
     f_scale = f_max - f_min
 
     # Pre-allocate result vector with known size
-    restored_columns = Vector{AbstractVector{Float64}}(undef, length(col_names))
+    restored_columns = Vector{AbstractVector{T}}(undef, length(col_names))
 
     for (col_idx, name) in enumerate(col_names)
         scaled_col_vector = _extract_column_vector(Xscaled, name)
@@ -178,7 +191,7 @@ function MMI.inverse_transform(transformer::MinMaxScaler, fitresult, Xscaled)
         current_data_max = data_maxs[feature_idx]
         data_range = current_data_max - current_data_min
 
-        restored_col_vector = similar(scaled_col_vector, Float64)
+        restored_col_vector = similar(scaled_col_vector, T)
         if data_range == 0.0
             # If original data column was constant, all values should be current_data_min.
             restored_col_vector .= current_data_min
@@ -240,22 +253,24 @@ end
 
 function MMI.fit(transformer::QuantileTransformer, verbosity::Int, X)
     col_names = Tables.columnnames(X)
+    # Get promoted element type from all columns
+    T = _get_promoted_eltype(X)
     # Pre-allocate result vector with known size
-    quantiles_per_column = Vector{Vector{Float64}}(undef, length(col_names))
+    quantiles_per_column = Vector{Vector{T}}(undef, length(col_names))
 
     for (col_idx, name) in enumerate(col_names)
         col_data = Tables.getcolumn(X, name)
         # Convert to an iterable collection and ensure elements are numbers.
         col_iterable = if eltype(col_data) <: AbstractFloat
-            collect(Float64, col_data)
+            collect(T, col_data)
         else
-            Float64.(collect(col_data))
+            T.(collect(col_data))
         end
         # Filter non-finite values
         numeric_col_data = filter(isfinite, col_iterable)
 
         if isempty(numeric_col_data)
-            quantiles_per_column[col_idx] = Float64[] # Store empty if no valid data
+            quantiles_per_column[col_idx] = T[] # Store empty if no valid data
         else
             quantiles_per_column[col_idx] = sort(unique(numeric_col_data))
         end
@@ -277,11 +292,13 @@ function MMI.transform(transformer::QuantileTransformer, fitresult, Xnew)
     # Create mapping from feature name to index in training data
     feature_to_idx = _create_feature_mapping(fitresult.features)
 
+    # Get promoted element type from input table
+    T = _get_promoted_eltype(Xnew)
     min_range, max_range = transformer.feature_range
     range_span = max_range - min_range
 
     # Pre-allocate result vector with known size
-    transformed_cols = Vector{AbstractVector{Float64}}(undef, length(Xnew_col_names))
+    transformed_cols = Vector{AbstractVector{T}}(undef, length(Xnew_col_names))
 
     for (col_idx, name) in enumerate(Xnew_col_names)
         col_vector = _extract_column_vector(Xnew, name)
@@ -291,7 +308,7 @@ function MMI.transform(transformer::QuantileTransformer, fitresult, Xnew)
         current_quantiles = fitresult.quantiles_list[feature_idx]
         n_quantiles = length(current_quantiles)
 
-        new_col = similar(col_vector, Float64)
+        new_col = similar(col_vector, T)
 
         if n_quantiles == 0
             fill!(new_col, (min_range + max_range) * 0.5)
@@ -370,13 +387,15 @@ function MMI.inverse_transform(transformer::QuantileTransformer, fitresult, Xtra
     # Create mapping from feature name to index in training data
     feature_to_idx = _create_feature_mapping(fitresult.features)
 
+    # Get promoted element type from input table
+    T = _get_promoted_eltype(Xtransformed)
     min_range, max_range = transformer.feature_range
     range_span = max_range - min_range
     # Handle range_span == 0 separately to avoid division by zero with inv_range_span
     inv_range_span = range_span == 0.0 ? 0.0 : 1.0 / range_span # Will be used if range_span != 0
 
     # Pre-allocate result vector with known size
-    original_cols = Vector{AbstractVector{Float64}}(undef, length(Xtransformed_col_names))
+    original_cols = Vector{AbstractVector{T}}(undef, length(Xtransformed_col_names))
 
     for (col_idx, name) in enumerate(Xtransformed_col_names)
         col_vector = _extract_column_vector(Xtransformed, name)
@@ -386,7 +405,7 @@ function MMI.inverse_transform(transformer::QuantileTransformer, fitresult, Xtra
         current_quantiles = fitresult.quantiles_list[feature_idx]
         n_quantiles = length(current_quantiles)
 
-        new_col = similar(col_vector, Float64)
+        new_col = similar(col_vector, T)
         if n_quantiles == 0
             fill!(new_col, NaN) # No quantiles, cannot determine original value
         elseif n_quantiles == 1
