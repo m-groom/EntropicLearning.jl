@@ -383,7 +383,8 @@ function benchmark_update_G!(D::Int, T::Int, N_runs::Int=10)
 
     return benchmark_function_with_memory(
         "update_G!",
-        (G, X, P, C, W, L, epsC, weights) -> eSPA.update_G!(G, X, P, C, W, L, epsC, weights),
+        (G, X, P, C, W, L, epsC, weights) ->
+            eSPA.update_G!(G, X, P, C, W, L, epsC, weights),
         D,
         T,
         G,
