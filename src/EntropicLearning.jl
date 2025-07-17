@@ -9,21 +9,10 @@ using Random
 using Tables
 include("common/functions.jl")
 
-# Include EOS utility functions
-using MLJModelInterface
-using Roots
-include("utilities/eos.jl")
-export eos_distances, eos_loss, calculate_eos_weights, eos_outlier_scores
-
 # Include eSPA model
 include("eSPA/eSPA.jl")
 using .eSPA
 export eSPAClassifier
-
-# Include EOS wrapper model
-include("EOS/EOS.jl")
-using .EOS
-export EOSWrapper
 
 # Common package metadata
 const PKG_METADATA = (
@@ -33,17 +22,12 @@ const PKG_METADATA = (
     package_license="ASL",
 )
 
+using MLJModelInterface
 MLJModelInterface.metadata_pkg.(
     (eSPAClassifier, MinMaxScaler, QuantileTransformer);
     PKG_METADATA...,
     is_pure_julia=true,
     is_wrapper=false,
-)
-
-MLJModelInterface.metadata_pkg(
-    EOSWrapper;
-    PKG_METADATA...,
-    is_wrapper=true,  # EOS is a wrapper model
 )
 
 end # module EntropicLearning

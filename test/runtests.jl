@@ -4,7 +4,6 @@ using Test
     include("utilities.jl")
     include("common.jl")
     include("eSPA.jl")
-    include("EOS.jl")
 end
 
 include("Aqua.jl")
