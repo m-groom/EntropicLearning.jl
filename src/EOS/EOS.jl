@@ -162,7 +162,7 @@ end
 include("frontend.jl")  # Data front-end
 include("core.jl")
 
-# Common implementation - TODO: separate into fit and update methods
+# Common implementation for fit
 function MMI.fit(eos::EOSWrapper, verbosity::Int, args, T_instances::Int, Tf::Type)
     # Initialise the timer
     to = TimerOutput()
@@ -172,47 +172,12 @@ function MMI.fit(eos::EOSWrapper, verbosity::Int, args, T_instances::Int, Tf::Ty
         weights, distances, loss, inner_fitresult, inner_cache, inner_report = initialise(
             eos, verbosity, args, T_instances, Tf
         )
-        iterations = 0
     end
 
-    # --- Main Optimisation Loop ---
-    @timeit to "Training" begin
-        for iter in 1:eos.max_iter
-            # Increment iteration counter
-            iterations += 1
-
-            # θ-step: Fit model with current weights
-            @timeit to "inner_fit" inner_fitresult, inner_cache, inner_report = MMI.update(
-                eos.model, verbosity - 1, inner_fitresult, inner_cache, args..., weights
-            )
-
-            # Get distances from fitted model using reformatted data
-            @timeit to "distances" distances .= EntropicLearning.eos_distances(
-                eos.model, inner_fitresult, args...
-            )
-
-            # w-step: Update weights using closed-form solution
-            @timeit to "update_weights" EntropicLearning.update_weights!(weights, distances, eos.alpha)
-
-            # Compute objective function for convergence check
-            @timeit to "loss" loss[iter + 1] = EntropicLearning.eos_loss(eos.model, distances, weights, inner_fitresult, args...) - eos.alpha * EntropicLearning.entropy(weights)
-
-            # Check if loss function has increased
-            if loss[iter + 1] - loss[iter] > eps(Tf)
-                verbosity > 0 &&
-                    @warn "Loss function has increased at iteration $iter by $(loss[iter + 1] - loss[iter])"
-            end
-
-            # Check convergence
-            if abs((loss[iter + 1] - loss[iter]) / loss[iter]) <= eos.tol
-                break
-            end
-        end
-    end
-
-    if iterations >= eos.max_iter && verbosity > 0
-        @warn "EOS reached maximum iterations without converging"
-    end
+    # --- Training ---
+    inner_fitresult, inner_cache, inner_report, iterations, to = _fit!(
+        weights, distances, loss, inner_fitresult, inner_cache, inner_report, eos, verbosity, args, to
+    )
 
     # --- Return fitresult, cache and report ---
     fitresult = EOSFitResult(
@@ -226,7 +191,54 @@ function MMI.fit(eos::EOSWrapper, verbosity::Int, args, T_instances::Int, Tf::Ty
         weights=weights,
         inner_report=inner_report,
     )
-    cache = inner_cache
+    cache = (
+        report...,
+        inner_cache=inner_cache,
+    )
+
+    return (fitresult, cache, report)
+end
+
+# Common implementation for update
+function MMI.update(eos::EOSWrapper, verbosity::Int, fitresult::EOSFitResult, old_cache, args, T_instances::Int, Tf::Type)
+    # Get the timer
+    to = old_cache.timings
+
+    # Extract from cache
+    weights = old_cache.weights
+    distances = fitresult.distances
+    old_loss = old_cache.loss
+    inner_fitresult = fitresult.inner_fitresult
+    inner_cache = old_cache.inner_cache
+    inner_report = old_cache.inner_report
+
+    # --- Initialisation ---
+    @timeit to "Initialisation" begin
+        loss = fill(Tf(Inf), eos.max_iter + 1)
+        loss[1] = old_loss[end]
+    end
+
+    # --- Training ---
+    inner_fitresult, inner_cache, inner_report, iterations, to = _fit!(
+        weights, distances, loss, inner_fitresult, inner_cache, inner_report, eos, verbosity, args, to
+    )
+
+    # --- Return fitresult, cache and report ---
+    fitresult = EOSFitResult(
+        inner_fitresult, distances, EntropicLearning.effective_dimension(weights; normalise=true)
+    )
+    report = (
+        iterations=iterations + old_cache.iterations,
+        loss=vcat(old_loss, loss[2:(iterations + 1)]),
+        timings=to,
+        ESS=EntropicLearning.effective_dimension(weights),
+        weights=weights,
+        inner_report=inner_report,
+    )
+    cache = (
+        report...,
+        inner_cache=inner_cache,
+    )
 
     return (fitresult, cache, report)
 end
