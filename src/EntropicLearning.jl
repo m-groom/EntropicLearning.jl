@@ -6,6 +6,7 @@ export MinMaxScaler, QuantileTransformer
 
 using SparseArrays
 using Random
+using Tables
 include("common/functions.jl")
 
 # Include EOS utility functions

@@ -3,6 +3,7 @@ module Transformers
 using MLJModelInterface
 using Tables
 using Statistics
+import ..EntropicLearning
 
 const MMI = MLJModelInterface
 
@@ -53,13 +54,6 @@ function _build_named_tuple(column_names, column_vectors)
     return NamedTuple{Tuple(sym_names)}(Tuple(column_vectors))
 end
 
-function _get_promoted_eltype(table)
-    col_names = Tables.columnnames(table)
-    # Get all column types and promote them to find common supertype
-    col_types = [Tables.columntype(table, name) for name in col_names]
-    return promote_type(col_types...)
-end
-
 function _validate_feature_range(feature_range::Tuple{Float64,Float64})
     if feature_range[1] > feature_range[2]
         return "Upper bound of feature_range ($(feature_range[2])) must be greater than or equal to the lower bound ($(feature_range[1])). Resetting to (0.0, 1.0)."
@@ -95,7 +89,7 @@ function MMI.fit(transformer::MinMaxScaler, verbosity::Int, X)
     # X is assumed to be a Tables.jl compatible table.
     col_names = Tables.columnnames(X)
     # Get promoted element type from all columns
-    T = _get_promoted_eltype(X)
+    T = EntropicLearning.get_promoted_eltype(X)
     # Pre-allocate result vectors with known size
     all_mins = Vector{T}(undef, length(col_names))
     all_maxs = Vector{T}(undef, length(col_names))
@@ -136,7 +130,7 @@ function MMI.transform(transformer::MinMaxScaler, fitresult, Xnew)
     feature_to_idx = _create_feature_mapping(features)
 
     # Get promoted element type from input table
-    T = _get_promoted_eltype(Xnew)
+    T = EntropicLearning.get_promoted_eltype(Xnew)
     f_min, f_max = transformer.feature_range
     f_scale = f_max - f_min
 
@@ -186,7 +180,7 @@ function MMI.inverse_transform(transformer::MinMaxScaler, fitresult, Xscaled)
     feature_to_idx = _create_feature_mapping(features)
 
     # Get promoted element type from input table
-    T = _get_promoted_eltype(Xscaled)
+    T = EntropicLearning.get_promoted_eltype(Xscaled)
     f_min, f_max = transformer.feature_range
     f_scale = f_max - f_min
 
@@ -264,7 +258,7 @@ end
 function MMI.fit(transformer::QuantileTransformer, verbosity::Int, X)
     col_names = Tables.columnnames(X)
     # Get promoted element type from all columns
-    T = _get_promoted_eltype(X)
+    T = EntropicLearning.get_promoted_eltype(X)
     # Pre-allocate result vector with known size
     quantiles_per_column = Vector{Vector{T}}(undef, length(col_names))
 
@@ -303,7 +297,7 @@ function MMI.transform(transformer::QuantileTransformer, fitresult, Xnew)
     feature_to_idx = _create_feature_mapping(fitresult.features)
 
     # Get promoted element type from input table
-    T = _get_promoted_eltype(Xnew)
+    T = EntropicLearning.get_promoted_eltype(Xnew)
     min_range, max_range = transformer.feature_range
     range_span = max_range - min_range
 
@@ -352,7 +346,7 @@ function MMI.inverse_transform(transformer::QuantileTransformer, fitresult, Xtra
     feature_to_idx = _create_feature_mapping(fitresult.features)
 
     # Get promoted element type from input table
-    T = _get_promoted_eltype(Xtransformed)
+    T = EntropicLearning.get_promoted_eltype(Xtransformed)
     min_range, max_range = transformer.feature_range
     range_span = max_range - min_range
     # Handle range_span == 0 separately to avoid division by zero with inv_range_span

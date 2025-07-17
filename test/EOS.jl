@@ -215,7 +215,7 @@ end
     X_table, y_cat = MLJBase.make_blobs(
         T_instances, D_features; centers=K_clusters, cluster_std=1.0, rng=123, as_table=true
     )
-    model = eSPAClassifier(K=K_clusters, epsC=1e-2, epsW=1e-1, random_state=101)
+    model = eSPAClassifier(K=K_clusters, epsC=1e-2, epsW=1e-1, random_state=101, max_iter=1)
     eos_model = EOSWrapper(model; alpha=0.1, max_iter=100, tol=1e-6)
     mach = machine(eos_model, X_table, y_cat)
     fit!(mach, verbosity=0)
@@ -224,8 +224,6 @@ end
     @testset "Constructor and validation" begin
 
         @testset "Valid construction" begin
-            model = eSPAClassifier(K=5)
-
             # Positional argument
             eos1 = EOSWrapper(eSPAClassifier(K=5), alpha=0.1, tol=1e-6, max_iter=200)
             @test eos1.model isa eSPAClassifier

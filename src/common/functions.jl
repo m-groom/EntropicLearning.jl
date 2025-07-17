@@ -600,3 +600,12 @@ end
 # Helper function to get RNG
 get_rng(random_state::Int) = Xoshiro(random_state)
 get_rng(random_state::AbstractRNG) = random_state
+
+# Helper function to get the promoted eltype of a table
+function get_promoted_eltype(table)
+    @assert Tables.istable(table) "Input must be a Tables.jl compatible table"
+    col_names = Tables.columnnames(table)
+    # Get all column types and promote them to find common supertype
+    col_types = [Tables.columntype(table, name) for name in col_names]
+    return promote_type(col_types...)
+end

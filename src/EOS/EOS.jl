@@ -187,33 +187,17 @@ end
 # Fit Methods
 # ==============================================================================
 
-# Unsupervised case
-function MMI.fit(eos::UnsupervisedEOSWrapper, verbosity::Int, X)
-    return _fit(eos, verbosity, X, nothing)
-end
+include("frontend.jl")  # Data front-end
 
-# Supervised case (works for both Deterministic and Probabilistic)
-function MMI.fit(eos::EOSWrapper, verbosity::Int, X, y)
-    # This will match DeterministicEOSWrapper and ProbabilisticEOSWrapper
-    return _fit(eos, verbosity, X, y)
-end
 
 # Common implementation - TODO: separate into fit and update methods
-function _fit(eos::EOSWrapper, verbosity::Int, X, y=nothing)
+function MMI.fit(eos::EOSWrapper, verbosity::Int, args, T_instances::Int, Tf::Type)
     # Initialise the timer
     to = TimerOutput()
 
-    # Reformat data for the wrapped model
-    T_instances = MMI.nrows(X)
-    if isnothing(y)
-        args = MMI.reformat(eos.model, X)
-    else
-        args = MMI.reformat(eos.model, X, y)
-    end
-
+    # TODO: make this a separate function
     # --- Initialisation ---
     @timeit to "Initialisation" begin
-        Tf = eltype(X[1])
         weights = fill(Tf(1/T_instances), T_instances)
         inner_fitresult, inner_cache, inner_report = MMI.fit(eos.model, verbosity - 1, args...)
         distances = EntropicLearning.eos_distances(eos.model, inner_fitresult, args...)
@@ -227,6 +211,7 @@ function _fit(eos::EOSWrapper, verbosity::Int, X, y=nothing)
         ) - eos.alpha * EntropicLearning.entropy(weights)
     end
 
+    # TODO: make this a separate function
     # --- Main Optimisation Loop ---
     @timeit to "Training" begin
         for iter in 1:eos.max_iter
@@ -317,18 +302,18 @@ end
 # ==============================================================================
 # Transform and Predict Methods
 # ==============================================================================
-# TODO: write a data front-end so that transform (and predict) get the model-specific data format
 # TODO: refactor this and have transform return outlier scores instead of weights
-function MMI.transform(eos::EOSWrapper, fitresult::EOSFitResult, Xnew)
-    args = MMI.reformat(eos.model, Xnew)
+function MMI.transform(eos::EOSWrapper, fitresult::EOSFitResult, args)
+    T_train = length(fitresult.distances)
     dist = EntropicLearning.eos_distances(eos.model, fitresult.inner_fitresult, args...)
+    T_test = length(dist)
     append!(dist, fitresult.distances)
-    amin = min(MMI.nrows(Xnew)/length(fitresult.distances), length(fitresult.distances)/MMI.nrows(Xnew))
-    amax = max(MMI.nrows(Xnew)/length(fitresult.distances), length(fitresult.distances)/MMI.nrows(Xnew))
-    alpha_range = (amin * eos.alpha, amax * eos.alpha + 1e-5)
+    amin = min(T_test/T_train, T_train/T_test)
+    amax = max(T_test/T_train, T_train/T_test)
+    alpha_range = (0.1 * amin * eos.alpha, 10 * amax * eos.alpha)
     ESS = fitresult.ESS
-    weights_full, alpha = EntropicLearning.eos_weights(dist, alpha_range, ESS, atol=1e-6)
-    weights_new = weights_full[1:MMI.nrows(Xnew)]
+    weights_full, alpha = EntropicLearning.eos_weights(dist, alpha_range, ESS, atol=eos.atol)
+    weights_new = weights_full[1:T_test]
     return weights_new, (alpha=alpha,)
 end
 
@@ -336,12 +321,10 @@ end
 function MMI.predict(
     eos::Union{DeterministicEOSWrapper,ProbabilisticEOSWrapper},
     fitresult::EOSFitResult,
-    Xnew,
+    args,
 )
-    # Reformat new data for the wrapped model and pass through
-    args = MMI.reformat(eos.model, Xnew)
     result = MMI.predict(eos.model, fitresult.inner_fitresult, args...)
-    weights, report = MMI.transform(eos, fitresult, Xnew)
+    weights, report = MMI.transform(eos, fitresult, args)
     if :predict in MMI.reporting_operations(typeof(eos.model))
         return result[1], (weights=weights, inner_report_pred=result[2], report...)
     else
