@@ -341,8 +341,7 @@ end
         mach = fit!(machine(eos_model, X, y), verbosity=0)
 
         # Get outlier scores
-        weights = transform(mach, X)
-        scores = EntropicLearning.outlier_scores(weights)
+        scores = transform(mach, X)
 
         # Outliers should have higher scores
         clean_scores = scores[1:80]

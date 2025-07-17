@@ -463,8 +463,133 @@ import EntropicLearning.eSPA as eSPA
             @test ε_close_max > 0
         end
     end
+end
 
-    # TODO: get_pi tests
+@testset "data front-end" begin
+    @testset "get_pi function tests" begin
+        @testset "basic functionality" begin
+            # Test with 3 classes, 5 instances
+            y_int = [1, 2, 3, 1, 2]
+            M_classes = 3
+            Pi_mat = eSPA.get_pi(y_int, M_classes, Float64)
+
+            # Test dimensions
+            @test size(Pi_mat) == (3, 5)
+
+            # Test one-hot encoding
+            expected = [1.0 0.0 0.0 1.0 0.0;
+                       0.0 1.0 0.0 0.0 1.0;
+                       0.0 0.0 1.0 0.0 0.0]
+            @test Pi_mat ≈ expected
+
+            # Test column sums are 1
+            @test all(sum(Pi_mat; dims=1) .≈ 1.0)
+
+            # Test non-negative values
+            @test all(Pi_mat .>= 0)
+        end
+
+        @testset "edge cases" begin
+            # Empty vector
+            y_empty = Int[]
+            Pi_empty = eSPA.get_pi(y_empty, 3, Float64)
+            @test size(Pi_empty) == (3, 0)
+            @test eltype(Pi_empty) == Float64
+
+            # Single instance
+            y_single = [2]
+            Pi_single = eSPA.get_pi(y_single, 4, Float32)
+            @test size(Pi_single) == (4, 1)
+            @test eltype(Pi_single) == Float32
+            @test Pi_single[:, 1] == [0.0f0, 1.0f0, 0.0f0, 0.0f0]
+
+            # All same class
+            y_same = [1, 1, 1, 1]
+            Pi_same = eSPA.get_pi(y_same, 3, Float64)
+            @test size(Pi_same) == (3, 4)
+            @test all(Pi_same[1, :] .== 1.0)
+            @test all(Pi_same[2:3, :] .== 0.0)
+        end
+
+        @testset "different types" begin
+            # Test with different integer types
+            y_int8 = Int8[1, 2, 1]
+            Pi_int8 = eSPA.get_pi(y_int8, 2, Float64)
+            @test size(Pi_int8) == (2, 3)
+            @test Pi_int8 == [1.0 0.0 1.0; 0.0 1.0 0.0]
+
+            # Test with different float types
+            y_int = [1, 2, 3]
+            Pi_f32 = eSPA.get_pi(y_int, 3, Float32)
+            Pi_f64 = eSPA.get_pi(y_int, 3, Float64)
+            @test eltype(Pi_f32) == Float32
+            @test eltype(Pi_f64) == Float64
+            @test Pi_f32 ≈ Pi_f64
+        end
+    end
+
+    @testset "format_weights function tests" begin
+        @testset "basic functionality" begin
+            y = [1, 2, 1, 3]
+            w = [0.1, 0.3, 0.2, 0.4]
+            formatted = eSPA.format_weights(w, y, Float64)
+
+            # Test normalization
+            @test sum(formatted) ≈ 1.0
+            @test eltype(formatted) == Float64
+            @test length(formatted) == length(y)
+
+            # Test proportional to input
+            expected = w ./ sum(w)
+            @test formatted ≈ expected
+        end
+
+        @testset "type conversion" begin
+            y = [1, 2, 3]
+            w_int = [1, 2, 3]
+            formatted = eSPA.format_weights(w_int, y, Float32)
+
+            @test eltype(formatted) == Float32
+            @test formatted ≈ Float32[1/6, 2/6, 3/6]
+        end
+
+        @testset "edge cases" begin
+            y = [1, 2, 3, 4]
+
+            # All equal weights
+            w_equal = [1.0, 1.0, 1.0, 1.0]
+            formatted = eSPA.format_weights(w_equal, y)
+            @test all(formatted .≈ 0.25)
+
+            # Very small weights
+            w_small = [1e-10, 1e-10, 1e-10, 1e-10]
+            formatted = eSPA.format_weights(w_small, y)
+            @test sum(formatted) ≈ 1.0
+            @test all(formatted .≈ 0.25)
+
+            # Single weight
+            y_single = [1]
+            w_single = [0.5]
+            formatted = eSPA.format_weights(w_single, y_single)
+            @test formatted ≈ [1.0]
+        end
+
+        @testset "error handling" begin
+            y = [1, 2, 3]
+
+            # Wrong length
+            w_wrong = [0.1, 0.2]
+            @test_throws ArgumentError eSPA.format_weights(w_wrong, y)
+
+            # Wrong type
+            w_wrong_type = "not_a_vector"
+            @test_throws ArgumentError eSPA.format_weights(w_wrong_type, y)
+
+            # Non-numeric weights
+            w_non_numeric = ["a", "b", "c"]
+            @test_throws ArgumentError eSPA.format_weights(w_non_numeric, y)
+        end
+    end
 end
 
 @testset "eSPA core" begin

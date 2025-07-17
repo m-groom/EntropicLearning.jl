@@ -44,6 +44,7 @@ const EOSWrapper{M} = Union{
     DeterministicEOSWrapper{M},ProbabilisticEOSWrapper{M},UnsupervisedEOSWrapper{M}
 } where {M}
 Base.parentmodule(::Type{<:EOSWrapper}) = EOS
+Base.fieldnames(::Type{<:EOSWrapper}) = (:model, :alpha, :tol, :max_iter, :atol)
 
 # External keyword constructor
 function EOSWrapper(
@@ -338,7 +339,7 @@ end
 # ==============================================================================
 
 """
-$(MMI.doc_header(eSPAClassifier))
+$(MMI.doc_header(EOSWrapper))
 
 Entropic Outlier Sparsification (EOS) wrapper for MLJ models.
 
