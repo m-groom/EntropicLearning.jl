@@ -9,28 +9,16 @@ expected linear scaling relationships.
 
 using EntropicLearning
 using StatsBase: sample, median
-# using LinearAlgebra
 using Random
-# using SparseArrays
-# using Clustering: initseeds!, KmppAlg, copyseeds!
-# using Clustering.Distances: SqEuclidean, WeightedSqEuclidean
-# using TimerOutputs
-# using NearestNeighbors: KDTree, knn, inrange, Chebyshev
-# using SpecialFunctions: digamma
-# using Statistics: mean, std
 using Distributions: MultivariateNormal
 using MLJBase
 using Printf
 using Dates
 using JSON3
+using TimerOutputs
 
 # Access eSPA module
 import EntropicLearning.eSPA as eSPA
-
-# Include the core and extras module functions
-# include("../../src/eSPA/core.jl")
-# include("../../src/eSPA/extras.jl")
-# include("../../src/common/functions.jl")
 
 # Function to sanitise values for JSON serialisation
 function sanitise(value::Real)
@@ -271,7 +259,7 @@ function create_test(
     model = create_model(; rng=rng, K_clusters=K_clusters, epsC=1e-3, epsW=1e-1)
 
     # Initialise parameters
-    C, W, L, G = initialise(model, X, y, D_features, T_instances, M_classes)
+    C, W, L, G = eSPA.initialise(model, X, P, y)
 
     return X, P, C, W, L, G, model
 end
@@ -395,7 +383,7 @@ function benchmark_update_G!(D::Int, T::Int, N_runs::Int=10)
 
     return benchmark_function_with_memory(
         "update_G!",
-        (G, X, P, C, W, L, epsC, weights) -> update_G!(G, X, P, C, W, L, epsC, weights),
+        (G, X, P, C, W, L, epsC, weights) -> eSPA.update_G!(G, X, P, C, W, L, epsC, weights),
         D,
         T,
         G,
@@ -417,7 +405,7 @@ function benchmark_update_W!(D::Int, T::Int, N_runs::Int=10)
 
     return benchmark_function_with_memory(
         "update_W!",
-        (W, X, C, G, epsW, weights) -> update_W!(W, X, C, G, epsW, weights),
+        (W, X, C, G, epsW, weights) -> eSPA.update_W!(W, X, C, G, epsW, weights),
         D,
         T,
         W,
@@ -437,7 +425,7 @@ function benchmark_update_C!(D::Int, T::Int, N_runs::Int=10)
 
     return benchmark_function_with_memory(
         "update_C!",
-        (C, X, G, weights) -> update_C!(C, X, G, weights),
+        (C, X, G, weights) -> eSPA.update_C!(C, X, G, weights),
         D,
         T,
         C,
@@ -453,7 +441,7 @@ function benchmark_update_L!(D::Int, T::Int, N_runs::Int=10)
     X, P, C, W, L, G, model = create_test(D, T; rng=rng)
 
     return benchmark_function_with_memory(
-        "update_L!", (L, P, G) -> update_L!(L, P, G), D, T, L, P, G; N_runs=N_runs
+        "update_L!", (L, P, G) -> eSPA.update_L!(L, P, G), D, T, L, P, G; N_runs=N_runs
     )
 end
 
@@ -465,7 +453,7 @@ function benchmark_calc_loss(D::Int, T::Int, N_runs::Int=10)
     return benchmark_function_with_memory(
         "calc_loss",
         (X, P, C, W, L, G, epsC, epsW, weights) ->
-            calc_loss(X, P, C, W, L, G, epsC, epsW, weights),
+            eSPA.calc_loss(X, P, C, W, L, G, epsC, epsW, weights),
         D,
         T,
         X,
