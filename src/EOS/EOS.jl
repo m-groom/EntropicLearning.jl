@@ -177,10 +177,7 @@ function MMI.fit(eos::EOSWrapper, verbosity::Int, args, T_instances::Int, Tf::Ty
         # Store losses for convergence tracking
         loss = fill(Tf(Inf), eos.max_iter + 1)
         iterations = 0
-        # loss[1] = eos_loss(eos.model, distances, weights, inner_report, inner_fitresult, inner_cache) - eos.alpha * EntropicLearning.entropy(weights)
-        loss[1] =  EntropicLearning.eSPA.calc_loss(
-            args[1], args[2], inner_fitresult.C, inner_fitresult.W, inner_fitresult.L, inner_fitresult.G, eos.model.epsC, eos.model.epsW, weights
-        ) - eos.alpha * EntropicLearning.entropy(weights)
+        loss[1] = EntropicLearning.eos_loss(eos.model, distances, weights, inner_fitresult, args...) - eos.alpha * EntropicLearning.entropy(weights)
     end
 
     # TODO: make this a separate function
@@ -190,50 +187,21 @@ function MMI.fit(eos::EOSWrapper, verbosity::Int, args, T_instances::Int, Tf::Ty
             # Increment iteration counter
             iterations += 1
 
-            loss_before = loss[iter]
             # θ-step: Fit model with current weights
             @timeit to "inner_fit" inner_fitresult, inner_cache, inner_report = MMI.update(
                 eos.model, verbosity - 1, inner_fitresult, inner_cache, args..., weights
             )
-            # loss_after = eos_loss(eos.model, distances, weights, inner_report, inner_fitresult, inner_cache) - eos.alpha * EntropicLearning.entropy(weights)
-            loss_after = EntropicLearning.eSPA.calc_loss(
-                args[1], args[2], inner_fitresult.C, inner_fitresult.W, inner_fitresult.L, inner_fitresult.G, eos.model.epsC, eos.model.epsW, weights
-            ) - eos.alpha * EntropicLearning.entropy(weights)
-            if loss_after > loss_before
-                println("θ-step: Loss increased at iteration $iter by $(loss_after - loss_before)")
-            end
-            loss_before = loss_after
 
             # Get distances from fitted model using reformatted data
             @timeit to "distances" distances .= EntropicLearning.eos_distances(
                 eos.model, inner_fitresult, args...
             )
 
-            # loss_after = eos_loss(eos.model, distances, weights, inner_report, inner_fitresult, inner_cache) - eos.alpha * EntropicLearning.entropy(weights)
-            loss_after = EntropicLearning.eSPA.calc_loss(
-                args[1], args[2], inner_fitresult.C, inner_fitresult.W, inner_fitresult.L, inner_fitresult.G, eos.model.epsC, eos.model.epsW, weights
-            ) - eos.alpha * EntropicLearning.entropy(weights)
-            if loss_after > loss_before
-                println("distances: Loss increased at iteration $iter by $(loss_after - loss_before)")
-            end
-            loss_before = loss_after
-
             # w-step: Update weights using closed-form solution
             @timeit to "update_weights" EntropicLearning.update_weights!(weights, distances, eos.alpha)
-            # loss_after = eos_loss(eos.model, distances, weights, inner_report, inner_fitresult, inner_cache) - eos.alpha * EntropicLearning.entropy(weights)
-            loss_after = EntropicLearning.eSPA.calc_loss(
-                args[1], args[2], inner_fitresult.C, inner_fitresult.W, inner_fitresult.L, inner_fitresult.G, eos.model.epsC, eos.model.epsW, weights
-            ) - eos.alpha * EntropicLearning.entropy(weights)
-            if loss_after > loss_before
-                println("w-step: Loss increased at iteration $iter by $(loss_after - loss_before)")
-            end
-            loss_before = loss_after
 
             # Compute objective function for convergence check
-            # @timeit to "loss" loss[iter + 1] = eos_loss(eos.model, distances, weights, inner_report, inner_fitresult, inner_cache) - eos.alpha * EntropicLearning.entropy(weights)
-            @timeit to "loss" loss[iter + 1] = EntropicLearning.eSPA.calc_loss(
-                args[1], args[2], inner_fitresult.C, inner_fitresult.W, inner_fitresult.L, inner_fitresult.G, eos.model.epsC, eos.model.epsW, weights
-            ) - eos.alpha * EntropicLearning.entropy(weights)
+            @timeit to "loss" loss[iter + 1] = EntropicLearning.eos_loss(eos.model, distances, weights, inner_fitresult, args...) - eos.alpha * EntropicLearning.entropy(weights)
 
             # Check if loss function has increased
             if loss[iter + 1] - loss[iter] > eps(Tf)

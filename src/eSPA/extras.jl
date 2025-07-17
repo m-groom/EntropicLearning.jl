@@ -371,13 +371,7 @@ end
 # ==============================================================================
 
 # Fit
-function EntropicLearning.eos_distances(::eSPAClassifier, fitresult, X,
-    P,
-    y_int,
-    column_names,
-    classes,
-    w=nothing)
-
+function EntropicLearning.eos_distances(::eSPAClassifier, fitresult, X, P, args...)
     Tf = eltype(X)
     # Extract the model parameters from the fitresult
     C = fitresult.C
@@ -445,4 +439,9 @@ function EntropicLearning.eos_distances(::eSPAClassifier, fitresult, X)
     return disc_error
 end
 
-# TODO: override EntropicLearning.eos_loss
+# Implementation of EntropicLearning.eos_loss for eSPAClassifier
+function EntropicLearning.eos_loss(model::eSPAClassifier, distances::AbstractVector, weights::AbstractVector, fitresult, X, P, args...)
+    return calc_loss(
+        X, P, fitresult.C, fitresult.W, fitresult.L, fitresult.G, model.epsC, model.epsW, weights
+    )
+end

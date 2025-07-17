@@ -49,6 +49,14 @@ function eos_distances(model, args...)
     )
 end
 
+# TODO: add documentation in case users need to override this
+function eos_loss end
+
+# Default implementation of eos_loss
+function eos_loss(model, distances::AbstractVector, weights::AbstractVector, fitresult, args...)
+    return dot(weights, distances)
+end
+
 # ==============================================================================
 # Core EOS Functions
 # ==============================================================================

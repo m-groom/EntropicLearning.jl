@@ -13,7 +13,7 @@ include("common/functions.jl")
 using MLJModelInterface
 using Roots
 include("utilities/eos.jl")
-export eos_distances, calculate_eos_weights, eos_outlier_scores
+export eos_distances, eos_loss, calculate_eos_weights, eos_outlier_scores
 
 # Include eSPA model
 include("eSPA/eSPA.jl")
