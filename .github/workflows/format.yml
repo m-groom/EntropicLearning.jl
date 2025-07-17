@@ -33,7 +33,7 @@ jobs:
     - name: Setup Julia
       uses: julia-actions/setup-julia@v1
       with:
-        version: '1.9'
+        version: '1.11'
         
     - name: Install JuliaFormatter
       run: julia -e 'using Pkg; Pkg.add("JuliaFormatter")'
@@ -54,7 +54,7 @@ jobs:
         fi
         
     - name: Commit formatted files
-      if: steps.verify-changed-files.outputs.changed == 'true' && github.event_name == 'push'
+      if: steps.verify-changed-files.outputs.changed == 'true'
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
@@ -62,21 +62,3 @@ jobs:
         git commit -m "Auto-format Julia code with JuliaFormatter [skip ci]"
         git push
         
-    - name: Comment on PR (if formatting needed)
-      if: steps.verify-changed-files.outputs.changed == 'true' && github.event_name == 'pull_request'
-      uses: actions/github-script@v7
-      with:
-        script: |
-          github.rest.issues.createComment({
-            issue_number: context.issue.number,
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            body: '**Formatting Issues Found**\n\nThis PR has Julia code formatting issues. Please run the following command locally and push the changes:\n\n```bash\njulia -e "using JuliaFormatter; format(\\".\\")"```'
-          })
-          
-    - name: Fail on formatting issues for PRs
-      if: steps.verify-changed-files.outputs.changed == 'true' && github.event_name == 'pull_request'
-      run: |
-        echo "Code formatting issues found in PR!"
-        echo "Please run 'julia -e \"using JuliaFormatter; format(\\\".\\\")\")' locally and push the changes."
-        exit 1
