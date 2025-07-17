@@ -344,7 +344,7 @@ end
         )
 
         # Add obvious outliers
-        X_outliers = randn(20, D_features) * 5  # Large values, far from clusters
+        X_outliers = rand(20, D_features) * 5  # Large values, far from clusters
         y_outliers = rand(1:3, 20)     # Random class labels
 
         X = MLJBase.table(vcat(X_clean, X_outliers))
