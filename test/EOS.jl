@@ -386,7 +386,9 @@ end
     )
 
     # Create inner model and EOS wrapper
-    inner_model = eSPAClassifier(K=K_clusters, epsC=1e-2, epsW=1e-1, random_state=101, max_iter=1)
+    inner_model = eSPAClassifier(
+        K=K_clusters, epsC=1e-2, epsW=1e-1, random_state=101, max_iter=1
+    )
     eos_model = EOSWrapper(inner_model; alpha=1.0, max_iter=10, tol=1e-6)
 
     @testset "initialise function tests" begin
@@ -424,8 +426,12 @@ end
 
         @testset "Edge cases" begin
             # Test with single instance
-            X_single, y_single = make_blobs(1, D_features; centers=1, rng=456, as_table=true)
-            eos_model_single = EOSWrapper(eSPAClassifier(K=1); alpha=1.0, max_iter=10, tol=1e-6)
+            X_single, y_single = make_blobs(
+                1, D_features; centers=1, rng=456, as_table=true
+            )
+            eos_model_single = EOSWrapper(
+                eSPAClassifier(K=1); alpha=1.0, max_iter=10, tol=1e-6
+            )
             args_single = MLJModelInterface.reformat(eos_model_single, X_single, y_single)
             T_single = args_single[2]
             Tf = args_single[3]
@@ -457,8 +463,16 @@ end
 
             # Run _fit!
             final_inner_fitresult, final_inner_cache, final_inner_report, iterations, final_to = EOS._fit!(
-                weights, distances, loss, inner_fitresult, inner_cache, inner_report,
-                eos_model, 0, args[1], to
+                weights,
+                distances,
+                loss,
+                inner_fitresult,
+                inner_cache,
+                inner_report,
+                eos_model,
+                0,
+                args[1],
+                to,
             )
 
             # Test that function completed
@@ -497,8 +511,16 @@ end
             to = TimerOutput()
 
             _, _, _, iterations, _ = EOS._fit!(
-                weights, distances, loss, inner_fitresult, inner_cache, inner_report,
-                eos_test, 0, args[1], to
+                weights,
+                distances,
+                loss,
+                inner_fitresult,
+                inner_cache,
+                inner_report,
+                eos_test,
+                0,
+                args[1],
+                to,
             )
 
             # Test that loss generally decreases (allowing for small numerical increases)
@@ -524,8 +546,16 @@ end
             to = TimerOutput()
 
             _, _, _, iterations, _ = EOS._fit!(
-                weights, distances, loss, inner_fitresult, inner_cache, inner_report,
-                eos_uniform, 0, args[1], to
+                weights,
+                distances,
+                loss,
+                inner_fitresult,
+                inner_cache,
+                inner_report,
+                eos_uniform,
+                0,
+                args[1],
+                to,
             )
 
             # With alpha=Inf, weights should remain uniform
@@ -539,7 +569,9 @@ end
     X, y = MLJBase.@load_iris
     @testset "update equivalence to fit" begin
         # First, train a model to full convergence to get the baseline
-        inner_model_full = eSPAClassifier(K=3, epsC=1e-3, epsW=1e-1, max_iter=1, tol=1e-8, random_state=42)
+        inner_model_full = eSPAClassifier(
+            K=3, epsC=1e-3, epsW=1e-1, max_iter=1, tol=1e-8, random_state=42
+        )
         eos_model_full = EOSWrapper(inner_model_full; alpha=1.0, max_iter=20, tol=1e-8)
         mach_full = MLJBase.machine(eos_model_full, X, y)
         MLJBase.fit!(mach_full; verbosity=0)
@@ -552,8 +584,12 @@ end
         split_iter = max(2, total_iterations ÷ 2)
 
         # Train a model with limited iterations
-        inner_model_partial = eSPAClassifier(K=3, epsC=1e-3, epsW=1e-1, max_iter=1, tol=1e-8, random_state=42)
-        eos_model_partial = EOSWrapper(inner_model_partial; alpha=1.0, max_iter=split_iter, tol=1e-8)
+        inner_model_partial = eSPAClassifier(
+            K=3, epsC=1e-3, epsW=1e-1, max_iter=1, tol=1e-8, random_state=42
+        )
+        eos_model_partial = EOSWrapper(
+            inner_model_partial; alpha=1.0, max_iter=split_iter, tol=1e-8
+        )
         mach_partial = MLJBase.machine(eos_model_partial, X, y)
         MLJBase.fit!(mach_partial; verbosity=0)
 
@@ -603,7 +639,9 @@ end
         # Test that update properly accumulates timings and loss history
 
         # Train partially
-        inner_model = eSPAClassifier(K=3, epsC=1e-3, epsW=1e-1, max_iter=1, tol=1e-8, random_state=101)
+        inner_model = eSPAClassifier(
+            K=3, epsC=1e-3, epsW=1e-1, max_iter=1, tol=1e-8, random_state=101
+        )
         eos_model = EOSWrapper(inner_model; alpha=1.0, max_iter=5, tol=1e-8)
         mach = MLJBase.machine(eos_model, X, y)
         MLJBase.fit!(mach; verbosity=0)
