@@ -6,14 +6,13 @@ using LinearAlgebra
 using Random
 using SparseArrays
 using Clustering: initseeds!, KmppAlg, copyseeds!
-using Clustering.Distances: SqEuclidean, WeightedSqEuclidean
+using Clustering.Distances: WeightedSqEuclidean
 using TimerOutputs
 using NearestNeighbors: KDTree, knn, inrange, Chebyshev
 using SpecialFunctions: digamma
 using Statistics: mean, std
-
-# Include common functions
-include("../common/functions.jl")
+using Tables
+import ..EntropicLearning
 
 const MMI = MLJModelInterface
 
@@ -25,140 +24,143 @@ MMI.@mlj_model mutable struct eSPAClassifier <: MMI.Probabilistic
     epsW::Float64 = 1e-1::(_ > 0.0)
     kpp_init::Bool = true::(_ in (true, false))
     mi_init::Bool = true::(_ in (true, false))
-    iterative_pred::Bool = false::(_ in (true, false))
-    unbias::Bool = false::(_ in (true, false))
+    unbias::Bool = true::(_ in (true, false))
     max_iter::Int = 200::(_ > 0)
     tol::Float64 = 1e-8::(_ > 0.0)
     random_state::Union{AbstractRNG,Integer} = Random.default_rng()
 end
 
 # Fit Result Structure
-struct eSPAFitResult{Tm<:AbstractMatrix,Tv<:AbstractVector,Tc<:AbstractVector}
+struct eSPAFitResult{
+    Tm<:AbstractMatrix,Tv<:AbstractVector,Tg<:AbstractMatrix,Tc<:AbstractVector
+}
     C::Tm       # Centroids: D x K
     W::Tv       # Feature weights: D-element vector
     L::Tm       # Conditional probabilities for clusters: M x K
+    G::Tg       # Cluster affiliations: K × T
     classes::Tc # Vector of unique class labels (CategoricalValue)
 end
 
 # Include core eSPA functions for intitialisation, training and prediction
 include("core.jl")
 include("extras.jl")
+include("frontend.jl") # MLJ data front-end
 
 # MLJ Interface
-function MMI.fit(model::eSPAClassifier, verbosity::Int, X, y)
+function MMI.fit(
+    model::eSPAClassifier,
+    verbosity::Int,
+    X_mat,
+    Pi_mat,
+    y_int,
+    column_names,
+    classes,
+    w=nothing,
+)
     # Initialise the timer
     to = TimerOutput()
 
-    # TODO: write a data front-end
-    X_mat = MMI.matrix(X; transpose=true)
-    D_features, T_instances = size(X_mat)
-    classes = MMI.classes(y[1]) # classes_seen = MMI.decoder(classes)(unique(y_int))
-    M_classes = length(classes)
-    y_int = MMI.int(y)  # TODO: pass y_int using data front-end
+    # Extract dimensions
+    Tf = eltype(X_mat)                                  # Floating point type
+    D_features, T_instances = size(X_mat)               # Dimensions
+    M_classes = length(classes)                         # Total number of classes
+    classes_seen = MMI.decoder(classes)(unique(y_int))  # Classes seen in training data
 
-    # TODO: make this a function
-    Tf = eltype(X_mat)
-    Pi_mat = zeros(Tf, M_classes, T_instances)
-    if T_instances > 0
-        for t in 1:T_instances
-            Pi_mat[y_int[t], t] = one(Tf)
-        end
+    # Ensure weights are normalised
+    if !isnothing(w)
+        weights = format_weights(w, y_int, Tf)
+    else
+        weights = fill(Tf(1 / T_instances), T_instances)
     end
 
-    # --- Initialization ---
+    # --- Initialisation ---
     @timeit to "Initialisation" begin
-        C, W, L, G = initialise(model, X_mat, y_int, D_features, T_instances, M_classes)
-        K_current = size(C, 2)                  # Current number of clusters
-        loss = fill(Tf(Inf), model.max_iter + 1)    # Loss for each iteration
-        iter = 0                                # Iteration counter
-        loss[1] = calc_loss(X_mat, Pi_mat, C, W, L, G, model.epsC, model.epsW)
+        C, W, L, G = initialise(model, X_mat, Pi_mat, y_int)
     end
 
-    # --- Main Optimisation Loop ---
-    @timeit to "Training" begin
-        while !converged(loss, iter, model.max_iter, model.tol)
-            # Update iteration counter
-            iter += 1
-
-            # Evaluation of the Γ-step
-            @timeit to "G" update_G!(G, X_mat, Pi_mat, C, W, L, model.epsC)
-
-            # Discard empty boxes
-            notEmpty, K_new = find_empty(G)
-            if K_new < K_current
-                @timeit to "Prune" C, L, G = remove_empty(C, L, G, notEmpty)
-                K_current = copy(K_new)
-            end
-
-            # Evaluation of the W-step
-            @timeit to "W" update_W!(W, X_mat, C, G, model.epsW)
-
-            # Evaluation of the C-step
-            @timeit to "C" update_C!(C, X_mat, G)
-
-            # Evaluation of the Λ-step
-            @timeit to "L" update_L!(L, Pi_mat, G)
-
-            # Update loss
-            @timeit to "Loss" loss[iter + 1] = calc_loss(
-                X_mat, Pi_mat, C, W, L, G, model.epsC, model.epsW
-            )
-
-            # Check if loss function has increased
-            check_loss(loss, iter, verbosity)
-        end
-    end
-
-    # Warn if the maximum number of iterations was reached
-    check_iter(iter, model.max_iter, verbosity)
-
-    # --- Unbiasing step ---
-    @timeit to "Unbias" begin
-        if model.unbias
-            # Unbias Γ
-            update_G!(G, X_mat, Pi_mat, C, W, L, Tf(0.0))
-
-            if model.iterative_pred
-                P = Matrix{Tf}(undef, M_classes, T_instances)
-                update_P!(P, L, G)
-                iterative_predict!(P, G, model, X_mat, C, W, L; verbosity=verbosity)
-            end
-
-            # Discard empty boxes
-            notEmpty, K_new = find_empty(G)
-            if K_new < K_current
-                C, L, G = remove_empty(C, L, G, notEmpty)
-                K_current = copy(K_new)
-            end
-
-            if !model.iterative_pred
-                # Unbias Λ
-                update_L!(L, Pi_mat, G)
-            end
-        end
-    end
+    # --- Training ---
+    loss, iter, to = _fit!(C, W, L, G, model, verbosity, X_mat, Pi_mat, weights, to)
 
     # Estimate the effective number of parameters
-    Deff = effective_dimension(W)
+    Deff = EntropicLearning.effective_dimension(W)
+    K_current = size(C, 2)
     n_params = Deff * (K_current + 1) + (M_classes - 1) * K_current
 
     # --- Return fitresult, cache and report ---
-    fitresult = eSPAFitResult(C, W, L, classes)
-    cache = nothing
-    report = (iterations=iter, loss=loss[1:(iter + 1)], timings=to, G=G, n_params=n_params)
+    fitresult = eSPAFitResult(C, W, L, G, classes)
+    report = (
+        iterations=iter,
+        loss=loss,
+        timings=to,
+        n_params=n_params,
+        classes=classes_seen,
+        features=column_names,
+    )
+    cache = (
+        report..., dimensions=(D_features, T_instances, M_classes, K_current), precision=Tf
+    )
 
     return (fitresult, cache, report)
 end
 
-function MMI.predict(model::eSPAClassifier, fitresult::eSPAFitResult, Xnew)
+function MMI.update(
+    model::eSPAClassifier,
+    verbosity::Int,
+    fitresult::eSPAFitResult,   # Note: this is mutated
+    old_cache,
+    X_mat,
+    Pi_mat,
+    y_int,
+    column_names,
+    classes,
+    w=nothing,
+)
+    # Get the timer
+    to = old_cache.timings
 
-    # TODO: write a data front-end
-    X_mat = MMI.matrix(Xnew; transpose=true)
+    # Extract from cache
+    Tf = old_cache.precision
+    D_features, T_instances, M_classes, _ = old_cache.dimensions
 
-    Pi_new, G_new = predict_proba(model, fitresult.C, fitresult.W, fitresult.L, X_mat)  # TODO: store G_new in the report
-    probabilities = Pi_new'
+    # Ensure weights are normalised
+    if !isnothing(w)
+        weights = format_weights(w, y_int, Tf)
+    else
+        weights = fill(Tf(1 / T_instances), T_instances)
+    end
 
-    return MMI.UnivariateFinite(fitresult.classes, probabilities)
+    # --- Initialisation ---
+    C, W, L, G = fitresult.C, fitresult.W, fitresult.L, fitresult.G
+
+    # --- Training ---
+    loss, iter, to = _fit!(C, W, L, G, model, verbosity, X_mat, Pi_mat, weights, to)
+
+    # Estimate the effective number of parameters
+    Deff = EntropicLearning.effective_dimension(W)
+    K_current = size(C, 2)
+    n_params = Deff * (K_current + 1) + (M_classes - 1) * K_current
+
+    # --- Return fitresult, cache and report ---
+    report = (
+        iterations=iter + old_cache.iterations,
+        loss=vcat(old_cache.loss, loss),
+        timings=to,
+        n_params=n_params,
+        classes=old_cache.classes,
+        features=old_cache.features,
+    )
+    cache = (
+        report..., dimensions=(D_features, T_instances, M_classes, K_current), precision=Tf
+    )
+    return (fitresult, cache, report)
+end
+
+function MMI.predict(model::eSPAClassifier, fitresult::eSPAFitResult, X_mat)
+    Pi_new, G_new = _predict(model, fitresult.C, fitresult.W, fitresult.L, X_mat)
+    probabilities = transpose(Pi_new)
+    report = (G=G_new,)
+
+    return MMI.UnivariateFinite(fitresult.classes, probabilities), report
 end
 
 function MMI.fitted_params(::eSPAClassifier, fitresult::eSPAFitResult)
@@ -166,26 +168,27 @@ function MMI.fitted_params(::eSPAClassifier, fitresult::eSPAFitResult)
 end
 
 function MMI.feature_importances(::eSPAClassifier, fitresult::eSPAFitResult, report)
-    # TODO: store feature names in the report
-
-    # Extract feature weights from fitresult
     W = fitresult.W
-
-    # Create feature names (since they're not stored in fitresult)
-    feature_names = [Symbol("feature_$i") for i in eachindex(W)]
-
+    importance = one(eltype(W)) .- exp.(-length(W) .* W)
     # Create pairs of feature_name => importance
-    return [feature_names[i] => W[i] for i in eachindex(W)]
+    return [report.features[i] => importance[i] for i in eachindex(importance)]
+end
+
+function MMI.training_losses(::eSPAClassifier, report)
+    return report.loss
 end
 
 # MLJ Traits
 MMI.reports_feature_importances(::Type{<:eSPAClassifier}) = true
 MMI.iteration_parameter(::Type{<:eSPAClassifier}) = :max_iter
+MMI.supports_weights(::Type{<:eSPAClassifier}) = true
+MMI.supports_training_losses(::Type{<:eSPAClassifier}) = true
+MMI.reporting_operations(::Type{<:eSPAClassifier}) = (:predict,)
 
 MMI.metadata_model(
     eSPAClassifier;
-    input_scitype=Table(Continuous),
-    target_scitype=AbstractVector{<:Finite},
+    input_scitype=Union{MMI.Table(MMI.Continuous),AbstractMatrix{<:MMI.Continuous}},
+    target_scitype=AbstractVector{<:MMI.Finite},
     human_name="eSPA Classifier",
     load_path="EntropicLearning.eSPA.eSPAClassifier",
 )
@@ -228,17 +231,14 @@ Train the machine with `fit!(mach, rows=...)`.
 
 - `epsW::Float64 = 1e-1`: Regularisation parameter for the entropy of the feature weights.
 
-- `kpp_init::Bool = true`: If `true`, uses k-means++ for centroid initialization. If `false`,
+- `kpp_init::Bool = true`: If `true`, uses k-means++ for centroid initialisation. If `false`,
   centroids are initialised by randomly selecting data points.
 
 - `mi_init::Bool = true`: If `true`, feature weights `W` are initialised using the mutual
   information between features and classes. If `false`, they are initialised randomly and
   then normalised.
 
-- `iterative_pred::Bool = false`: If `true`, performs iterative refinement of cluster assignments
-  during the prediction phase.
-
-- `unbias::Bool = false`: If `true`, performs an unbiasing step after the main optimisation loop to
+- `unbias::Bool = true`: If `true`, performs an unbiasing step after the main optimisation loop to
   recalculate cluster assignments without the influence of `epsC`.
 
 - `max_iter::Int = 200`: Maximum number of iterations for the main optimisation loop.
@@ -253,12 +253,7 @@ Train the machine with `fit!(mach, rows=...)`.
 # Operations
 
 - `predict(mach, Xnew)`: return probabilistic predictions of the target given
-  features `Xnew` having the same scitype as `X` above. Predictions are based on
-  learned cluster assignments and conditional probabilities.
-
-- `predict_mode(mach, Xnew)`: instead return the mode (most likely class) of each
-  prediction above.
-
+  features `Xnew` having the same scitype as `X` above.
 
 # Fitted parameters
 
@@ -268,9 +263,7 @@ The fields of `fitted_params(mach)` are:
 
 - `W`: Feature weights vector (D × 1), representing the learned importance of each feature
 
-- `L`: Conditional probabilities matrix (M × K), where M is the number of classes
-
-- `classes`: Vector of unique class labels
+- `L`: Conditional probability matrix (M × K), where M is the number of classes
 
 
 # Report
@@ -283,7 +276,11 @@ The fields of `report(mach)` are:
 
 - `timings`: Timings for each step of the algorithm
 
-- `G`: Cluster assignment matrix (T × K), where T is the number of instances and K is the number of clusters
+- `n_params`: Effective number of parameters in the fitted model
+
+- `classes`: Vector of class labels that were seen during training
+
+- `features`: Vector of feature names
 
 
 # Examples
@@ -315,12 +312,6 @@ fp = fitted_params(mach)
 fp.C                           # learned centroids
 fp.W                           # learned feature weights
 fp.L                           # conditional probabilities for each cluster
-report(mach).G                 # cluster assignment matrix
-
-# Example with different initialization
-model2 = eSPA(K=3, kpp_init=false, mi_init=false, random_state=42)
-mach2 = machine(model2, X, y)
-fit!(mach2)
 ```
 
 See also the original references:

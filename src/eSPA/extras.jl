@@ -95,7 +95,7 @@ function compute_mi_cd(
             end
         else
             # Single point labels get count but no valid k
-            @inbounds for idx in label_indices
+            @inbounds @simd for idx in label_indices
                 label_counts[idx] = count
             end
         end
@@ -132,7 +132,7 @@ function compute_mi_cd(
     end
 
     # Apply nextafter towards zero to radius
-    @inbounds @simd for i in eachindex(radius_filtered)
+    @inbounds for i in eachindex(radius_filtered)
         if radius_filtered[i] > 0
             radius_filtered[i] = prevfloat(radius_filtered[i])
         end
@@ -249,8 +249,6 @@ Ross (2014) estimator designed for mixed continuous-discrete data.
 # References
 - Ross, B. C. "Mutual Information between Discrete and Continuous Data Sets". PLoS ONE
   9(2), 2014.
-- Kraskov, A., Stögbauer, H. & Grassberger, P. "Estimating mutual information". Phys. Rev.
-  E 69, 066138 (2004).
 """
 function mi_continuous_discrete(
     X::AbstractMatrix{Tf},
@@ -272,10 +270,6 @@ function mi_continuous_discrete(
 
     return mi_scores
 end
-
-# Helper function to get RNG
-get_rng(random_state::Int) = Xoshiro(random_state)
-get_rng(random_state::AbstractRNG) = random_state
 
 """
     get_eff(D::Ti, ε::Tf; normalise::Bool=true) where {Tf<:AbstractFloat,Ti<:Integer}
@@ -310,7 +304,7 @@ function get_eff(D::Ti, ε::Tf; normalise::Bool=true) where {Tf<:AbstractFloat,T
     @assert D >= 1 "D must be greater than or equal to 1"
     @assert ε > 0 "ε must be positive"
     # Return the generalised sigmoid function - normalised by default
-    f = 1 / D + (1 - 1 / D) / (1 + exp(-BETA * (safelog(ε) - GAMMA)))^ALPHA
+    f = 1 / D + (1 - 1 / D) / (1 + exp(-BETA * (EntropicLearning.safelog(ε) - GAMMA)))^ALPHA
     if normalise
         return f
     else
@@ -370,4 +364,100 @@ function get_eps(D::Ti, Deff::Tr; normalise::Bool=true) where {Tr<:Real,Ti<:Inte
     s = (f - 1 / D) / (1 - 1 / D)
 
     return exp(GAMMA) * (s^(-1 / ALPHA) - 1)^(-1 / BETA)
+end
+
+# ==============================================================================
+# Implementation of EOS distances for eSPAClassifier
+# ==============================================================================
+
+# Fit
+function EntropicLearning.eos_distances(::eSPAClassifier, fitresult, X, P, args...)
+    Tf = eltype(X)
+    # Extract the model parameters from the fitresult
+    C = fitresult.C
+    W = fitresult.W
+    G = fitresult.G
+    @assert size(G, 2) == size(X, 2) "Number of instances in the fitresult does not match the number of instances in the new data"
+
+    # Pre-compute C × Γ
+    if issparse(G)
+        CG = view(C, :, G.rowval)
+    else
+        CG = C * G
+    end
+    # Calculate the discretisation error (per sample)
+    disc_error = zeros(Tf, size(X, 2))  # Assumes X is a D×T matrix
+    @inbounds for t in axes(X, 2)
+        temp = zero(Tf)  # Cache current value for sum
+        @simd for d in axes(X, 1)
+            temp += W[d] * (X[d, t] - CG[d, t])^2
+        end
+        disc_error[t] = temp # Store result back to disc_error
+    end
+    return disc_error
+end
+
+# Predict
+function EntropicLearning.eos_distances(::eSPAClassifier, fitresult, X)
+    Tf = eltype(X)
+    # Extract the model parameters from the fitresult
+    C = fitresult.C
+    W = fitresult.W
+    L = fitresult.L
+    # Get dimensions
+    T_instances = size(X, 2)
+    K_clusters = size(C, 2)
+    M_classes = size(L, 1)
+
+    # Calculate Γ
+    G = sparse(
+        rand(1:K_clusters, T_instances),
+        1:T_instances,
+        ones(Bool, T_instances),
+        K_clusters,
+        T_instances,
+    )
+    weights = fill(Tf(1 / T_instances), T_instances)
+    P = Matrix{Tf}(undef, M_classes, T_instances)
+    update_G!(G, X, P, C, W, L, Tf(0.0), weights)
+
+    # Pre-compute C × Γ
+    if issparse(G)
+        CG = view(C, :, G.rowval)
+    else
+        CG = C * G
+    end
+    # Calculate the discretisation error (per sample)
+    disc_error = zeros(Tf, size(X, 2))  # Assumes X is a D×T matrix
+    @inbounds for t in axes(X, 2)
+        temp = zero(Tf)  # Cache current value for sum
+        @simd for d in axes(X, 1)
+            temp += W[d] * (X[d, t] - CG[d, t])^2
+        end
+        disc_error[t] = temp # Store result back to disc_error
+    end
+    return disc_error
+end
+
+# Implementation of EntropicLearning.eos_loss for eSPAClassifier
+function EntropicLearning.eos_loss(
+    model::eSPAClassifier,
+    distances::AbstractVector,
+    weights::AbstractVector,
+    fitresult,
+    X,
+    P,
+    args...,
+)
+    return calc_loss(
+        X,
+        P,
+        fitresult.C,
+        fitresult.W,
+        fitresult.L,
+        fitresult.G,
+        model.epsC,
+        model.epsW,
+        weights,
+    )
 end

@@ -13,7 +13,7 @@ X_table = (
 X = MLJBase.table(X_table)
 
 # MinMaxScaler tests
-@testset "MinMaxScaler Tests" begin
+@testset "MinMaxScaler" begin
     @testset "Default feature_range (0, 1)" begin
         scaler = MinMaxScaler()
         mach = machine(scaler, X)
@@ -121,7 +121,7 @@ X = MLJBase.table(X_table)
 end
 
 # QuantileTransformer tests
-@testset "QuantileTransformer Tests" begin
+@testset "QuantileTransformer" begin
     # Test data for QuantileTransformer
     X_qt_table = (
         a=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],

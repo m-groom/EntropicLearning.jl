@@ -3,10 +3,65 @@ module Transformers
 using MLJModelInterface
 using Tables
 using Statistics
+import ..EntropicLearning
 
 const MMI = MLJModelInterface
 
 export MinMaxScaler, QuantileTransformer
+
+######### Constants ##########
+
+const MIDPOINT_PROBABILITY = 0.5
+
+######### Utility Functions ##########
+
+function _validate_column_match(input_col_names, training_features)
+    input_cols = Set(input_col_names)
+    training_cols = Set(training_features)
+
+    missing_cols = setdiff(training_cols, input_cols)
+    extra_cols = setdiff(input_cols, training_cols)
+
+    if !isempty(missing_cols) || !isempty(extra_cols)
+        error_msg = "Column mismatch between input and training data. "
+        if !isempty(missing_cols)
+            error_msg *= "Missing columns: $(collect(missing_cols)). "
+        end
+        if !isempty(extra_cols)
+            error_msg *= "Extra columns: $(collect(extra_cols)). "
+        end
+        error(error_msg)
+    end
+end
+
+function _extract_column_vector(table, column_name)
+    col_data_abstract = Tables.getcolumn(table, column_name)
+    # Avoid collect if already an AbstractVector to reduce allocations
+    return if col_data_abstract isa AbstractVector
+        col_data_abstract
+    else
+        collect(col_data_abstract)
+    end
+end
+
+function _create_feature_mapping(features)
+    return Dict(feat => i for (i, feat) in enumerate(features))
+end
+
+function _build_named_tuple(column_names, column_vectors)
+    # Convert to symbols if needed (handles both Symbol and String column names)
+    sym_names =
+        column_names isa AbstractVector{Symbol} ? column_names : Symbol.(column_names)
+    return NamedTuple{Tuple(sym_names)}(Tuple(column_vectors))
+end
+
+function _validate_feature_range(feature_range::Tuple{Float64,Float64})
+    if feature_range[1] > feature_range[2]
+        return "Upper bound of feature_range ($(feature_range[2])) must be greater than or equal to the lower bound ($(feature_range[1])). Resetting to (0.0, 1.0)."
+    else
+        return ""
+    end
+end
 
 ######### MinMaxScaler ##########
 
@@ -23,9 +78,9 @@ function MinMaxScaler(; feature_range=(0.0, 1.0))
 end
 
 function MMI.clean!(transformer::MinMaxScaler)
-    err = ""
-    if transformer.feature_range[1] > transformer.feature_range[2]
-        err *= "Upper bound of feature_range ($(transformer.feature_range[2])) must be greater than or equal to the lower bound ($(transformer.feature_range[1]))."
+    err = _validate_feature_range(transformer.feature_range)
+    if !isempty(err)
+        transformer.feature_range = (0.0, 1.0)
     end
     return err
 end
@@ -34,73 +89,82 @@ end
 function MMI.fit(transformer::MinMaxScaler, verbosity::Int, X)
     # X is assumed to be a Tables.jl compatible table.
     col_names = Tables.columnnames(X)
-    all_mins = Float64[]
-    all_maxs = Float64[]
+    # Get promoted element type from all columns
+    T = EntropicLearning.get_promoted_eltype(X)
+    # Pre-allocate result vectors with known size
+    all_mins = Vector{T}(undef, length(col_names))
+    all_maxs = Vector{T}(undef, length(col_names))
 
-    for name in col_names
+    for (col_idx, name) in enumerate(col_names)
         col_data = Tables.getcolumn(X, name)
         # Convert to an iterable collection if it's not already one (e.g. a generator) and
         # ensure elements are numbers.
-        col_iterable = collect(col_data)
+        col_iterable = collect(T, col_data)
         if isempty(col_iterable)
             # Handle empty columns: use NaN
-            push!(all_mins, NaN)
-            push!(all_maxs, NaN)
+            all_mins[col_idx] = NaN
+            all_maxs[col_idx] = NaN
         else
-            push!(all_mins, Float64(minimum(col_iterable)))
-            push!(all_maxs, Float64(maximum(col_iterable)))
+            all_mins[col_idx] = minimum(col_iterable)
+            all_maxs[col_idx] = maximum(col_iterable)
         end
     end
 
-    fitresult = (mins=all_mins, maxs=all_maxs)
+    fitresult = (mins=all_mins, maxs=all_maxs, features=col_names)
     cache = nothing # No cache needed
-    report = nothing # TODO: return names of features that were scaled
+    report = nothing
 
     return fitresult, cache, report
 end
 
 # transform method: applies the scaling
-function MMI.transform(transformer::MinMaxScaler, fitresult, X)
-    col_names = Tables.columnnames(X)
+function MMI.transform(transformer::MinMaxScaler, fitresult, Xnew)
+    col_names = Tables.columnnames(Xnew)
     data_mins = fitresult.mins
     data_maxs = fitresult.maxs
+    features = fitresult.features
 
+    # Validate that input columns exactly match training columns
+    _validate_column_match(col_names, features)
+
+    # Create mapping from feature name to index in training data
+    feature_to_idx = _create_feature_mapping(features)
+
+    # Get promoted element type from input table
+    T = EntropicLearning.get_promoted_eltype(Xnew)
     f_min, f_max = transformer.feature_range
     f_scale = f_max - f_min
 
-    scaled_columns = Vector{AbstractVector{Float64}}()
+    # Pre-allocate result vector with known size
+    scaled_columns = Vector{AbstractVector{T}}(undef, length(col_names))
 
-    for (j, name) in enumerate(col_names)
-        col_data_abstract = Tables.getcolumn(X, name)
-        # Avoid collect if already an AbstractVector to reduce allocations
-        col_vector = if col_data_abstract isa AbstractVector
-            col_data_abstract
-        else
-            collect(col_data_abstract)
-        end
+    for (col_idx, name) in enumerate(col_names)
+        col_vector = _extract_column_vector(Xnew, name)
 
-        current_data_min = data_mins[j]
-        current_data_max = data_maxs[j]
+        # Use feature name to get correct min/max values
+        feature_idx = feature_to_idx[name]
+        current_data_min = data_mins[feature_idx]
+        current_data_max = data_maxs[feature_idx]
         data_range = current_data_max - current_data_min
 
-        scaled_col_vector = similar(col_vector, Float64)
+        scaled_col_vector = similar(col_vector, T)
 
         if data_range == 0.0
             # If data column is constant, map all values to f_min
             scaled_col_vector .= f_min
         else
             inv_data_range = 1.0 / data_range
-            for i in eachindex(col_vector)
+            @inbounds @simd for i in eachindex(col_vector)
                 # Standardise to [0,1] then scale to feature_range
                 scaled_col_vector[i] =
                     (col_vector[i] - current_data_min) * inv_data_range * f_scale + f_min
             end
         end
 
-        push!(scaled_columns, scaled_col_vector)
+        scaled_columns[col_idx] = scaled_col_vector
     end
 
-    return NamedTuple{Tuple(col_names)}(Tuple(scaled_columns))
+    return _build_named_tuple(col_names, scaled_columns)
 end
 
 # inverse_transform method: reverses the scaling
@@ -108,25 +172,32 @@ function MMI.inverse_transform(transformer::MinMaxScaler, fitresult, Xscaled)
     col_names = Tables.columnnames(Xscaled)
     data_mins = fitresult.mins
     data_maxs = fitresult.maxs
+    features = fitresult.features
 
+    # Validate that input columns exactly match training columns
+    _validate_column_match(col_names, features)
+
+    # Create mapping from feature name to index in training data
+    feature_to_idx = _create_feature_mapping(features)
+
+    # Get promoted element type from input table
+    T = EntropicLearning.get_promoted_eltype(Xscaled)
     f_min, f_max = transformer.feature_range
     f_scale = f_max - f_min
 
-    restored_columns = Vector{AbstractVector{Float64}}()
+    # Pre-allocate result vector with known size
+    restored_columns = Vector{AbstractVector{T}}(undef, length(col_names))
 
-    for (j, name) in enumerate(col_names)
-        scaled_col_data_abstract = Tables.getcolumn(Xscaled, name)
-        scaled_col_vector = if scaled_col_data_abstract isa AbstractVector
-            scaled_col_data_abstract
-        else
-            collect(scaled_col_data_abstract)
-        end
+    for (col_idx, name) in enumerate(col_names)
+        scaled_col_vector = _extract_column_vector(Xscaled, name)
 
-        current_data_min = data_mins[j]
-        current_data_max = data_maxs[j]
+        # Use feature name to get correct min/max values
+        feature_idx = feature_to_idx[name]
+        current_data_min = data_mins[feature_idx]
+        current_data_max = data_maxs[feature_idx]
         data_range = current_data_max - current_data_min
 
-        restored_col_vector = similar(scaled_col_vector, Float64)
+        restored_col_vector = similar(scaled_col_vector, T)
         if data_range == 0.0
             # If original data column was constant, all values should be current_data_min.
             restored_col_vector .= current_data_min
@@ -137,20 +208,20 @@ function MMI.inverse_transform(transformer::MinMaxScaler, fitresult, Xscaled)
         else
             # Both data_range and f_scale are non-zero.
             inv_f_scale = 1.0 / f_scale
-            for i in eachindex(scaled_col_vector)
+            @inbounds @simd for i in eachindex(scaled_col_vector)
                 # Ensure input to Float64 conversion if elements are not already floats
                 val_01 = (scaled_col_vector[i] - f_min) * inv_f_scale
                 restored_col_vector[i] = val_01 * data_range + current_data_min
             end
         end
-        push!(restored_columns, restored_col_vector)
+        restored_columns[col_idx] = restored_col_vector
     end
 
-    return NamedTuple{Tuple(col_names)}(Tuple(restored_columns))
+    return _build_named_tuple(col_names, restored_columns)
 end
 
 # Fitted parameters
-function MMI.fitted_params(::MinMaxScaler, fitresult) # TODO: also return names of features that were scaled
+function MMI.fitted_params(::MinMaxScaler, fitresult)
     return (min_values_per_feature=fitresult.mins, max_values_per_feature=fitresult.maxs)
 end
 
@@ -178,34 +249,39 @@ function QuantileTransformer(; feature_range=(0.0, 1.0))
 end
 
 function MMI.clean!(transformer::QuantileTransformer)
-    err = ""
-    if transformer.feature_range[1] > transformer.feature_range[2]
-        err *= "Upper bound of feature_range ($(transformer.feature_range[2])) must be greater than or equal to the lower bound ($(transformer.feature_range[1]))."
+    err = _validate_feature_range(transformer.feature_range)
+    if !isempty(err)
+        transformer.feature_range = (0.0, 1.0)
     end
     return err
 end
 
 function MMI.fit(transformer::QuantileTransformer, verbosity::Int, X)
     col_names = Tables.columnnames(X)
-    quantiles_per_column = Vector{Vector{Float64}}()
+    # Get promoted element type from all columns
+    T = EntropicLearning.get_promoted_eltype(X)
+    # Pre-allocate result vector with known size
+    quantiles_per_column = Vector{Vector{T}}(undef, length(col_names))
 
-    for name in col_names
+    for (col_idx, name) in enumerate(col_names)
         col_data = Tables.getcolumn(X, name)
         # Convert to an iterable collection and ensure elements are numbers.
-        col_iterable = collect(
-            eltype(col_data) <: AbstractFloat ? col_data : float.(col_data)
-        )
+        col_iterable = if eltype(col_data) <: AbstractFloat
+            collect(T, col_data)
+        else
+            T.(collect(col_data))
+        end
         # Filter non-finite values
         numeric_col_data = filter(isfinite, col_iterable)
 
         if isempty(numeric_col_data)
-            push!(quantiles_per_column, Float64[]) # Store empty if no valid data
+            quantiles_per_column[col_idx] = T[] # Store empty if no valid data
         else
-            push!(quantiles_per_column, sort(unique(numeric_col_data)))
+            quantiles_per_column[col_idx] = sort(unique(numeric_col_data))
         end
     end
 
-    fitresult = (quantiles_list=quantiles_per_column, col_names=col_names)
+    fitresult = (quantiles_list=quantiles_per_column, features=col_names)
     cache = nothing
     report = nothing
 
@@ -214,93 +290,47 @@ end
 
 function MMI.transform(transformer::QuantileTransformer, fitresult, Xnew)
     Xnew_col_names = Tables.columnnames(Xnew)
-    if Xnew_col_names != fitresult.col_names
-        error("Column names in Xnew do not match column names from fitting.")
-    end
 
+    # Validate that input columns exactly match training columns
+    _validate_column_match(Xnew_col_names, fitresult.features)
+
+    # Create mapping from feature name to index in training data
+    feature_to_idx = _create_feature_mapping(fitresult.features)
+
+    # Get promoted element type from input table
+    T = EntropicLearning.get_promoted_eltype(Xnew)
     min_range, max_range = transformer.feature_range
     range_span = max_range - min_range
 
-    transformed_cols = Vector{AbstractVector{Float64}}()
+    # Pre-allocate result vector with known size
+    transformed_cols = Vector{AbstractVector{T}}(undef, length(Xnew_col_names))
 
-    for (j, name) in enumerate(Xnew_col_names)
-        col_data_abstract = Tables.getcolumn(Xnew, name)
-        # Avoid collect if already an AbstractVector
-        col_vector = if col_data_abstract isa AbstractVector
-            col_data_abstract
-        else
-            collect(col_data_abstract)
-        end
+    for (col_idx, name) in enumerate(Xnew_col_names)
+        col_vector = _extract_column_vector(Xnew, name)
 
-        # Ensure fitresult.quantiles_list has an entry for j
-        if j > length(fitresult.quantiles_list)
-            error(
-                "Mismatch in column count or order compared to fit data for column: $name"
-            )
-        end
-        current_quantiles = fitresult.quantiles_list[j]
+        # Use feature name to get correct quantiles
+        feature_idx = feature_to_idx[name]
+        current_quantiles = fitresult.quantiles_list[feature_idx]
         n_quantiles = length(current_quantiles)
 
-        new_col = similar(col_vector, Float64)
-
-        if n_quantiles == 0
-            fill!(new_col, (min_range + max_range) * 0.5)
+        # Process column based on number of quantiles
+        new_col = if n_quantiles == 0
+            _process_empty_quantiles(col_vector, min_range, max_range, T)
         elseif n_quantiles == 1
-            q_val = current_quantiles[1]
-            for i in eachindex(col_vector)
-                val = float(col_vector[i])
-                p = if !isfinite(val)
-                    0.5
-                elseif val < q_val
-                    0.0
-                elseif val > q_val
-                    1.0
-                else # val == q_val
-                    0.5 # Convention for single quantile: map to midpoint
-                end
-                new_col[i] = p * range_span + min_range
-            end
+            _process_single_quantile(
+                col_vector, current_quantiles[1], min_range, max_range, range_span, T
+            )
         else
-            q_min = current_quantiles[1]
-            q_max = current_quantiles[end]
-            # Pre-calculate inverse of (n_quantiles - 1) to avoid repeated division
-            inv_n_quantiles_minus_1 = 1.0 / (n_quantiles - 1)
-
-            for i in eachindex(col_vector)
-                val = float(col_vector[i])
-                p = 0.0
-
-                if !isfinite(val)
-                    p = 0.5 # Convention for non-finite values: map to midpoint of target range
-                elseif val <= q_min
-                    p = 0.0
-                elseif val >= q_max
-                    p = 1.0
-                else
-                    # Find insertion point
-                    idx = searchsortedlast(current_quantiles, val)
-                    q_i = current_quantiles[idx]
-                    p_i = (idx - 1) * inv_n_quantiles_minus_1
-
-                    if val == q_i # Value falls exactly on a quantile
-                        p = p_i
-                    else # Interpolate between q_i and q_i_plus_1
-                        q_i_plus_1 = current_quantiles[idx + 1]
-                        p_i_plus_1 = idx * inv_n_quantiles_minus_1
-
-                        denominator = q_i_plus_1 - q_i
-                        fraction = denominator == 0.0 ? 0.0 : (val - q_i) / denominator
-                        p = p_i + fraction * (p_i_plus_1 - p_i)
-                    end
-                end
-                new_col[i] = p * range_span + min_range
-            end
+            _process_multiple_quantiles(
+                col_vector, current_quantiles, min_range, max_range, range_span, T
+            )
         end
-        push!(transformed_cols, new_col)
+
+        transformed_cols[col_idx] = new_col
     end
 
     # Reconstruct the table with the original column names from fitting
-    output_col_names = fitresult.col_names
+    output_col_names = fitresult.features
     if length(transformed_cols) != length(output_col_names)
         error(
             "Internal error: Number of transformed columns does not match number of " *
@@ -308,66 +338,63 @@ function MMI.transform(transformer::QuantileTransformer, fitresult, Xnew)
         )
     end
 
-    return NamedTuple{Tuple(Symbol.(output_col_names))}(Tuple(transformed_cols))
+    return _build_named_tuple(output_col_names, transformed_cols)
 end
 
 function MMI.inverse_transform(transformer::QuantileTransformer, fitresult, Xtransformed)
     Xtransformed_col_names = Tables.columnnames(Xtransformed)
-    if Xtransformed_col_names != fitresult.col_names
-        error("Column names in Xtransformed do not match column names from fitting.")
-    end
 
+    # Validate that input columns exactly match training columns
+    _validate_column_match(Xtransformed_col_names, fitresult.features)
+
+    # Create mapping from feature name to index in training data
+    feature_to_idx = _create_feature_mapping(fitresult.features)
+
+    # Get promoted element type from input table
+    T = EntropicLearning.get_promoted_eltype(Xtransformed)
     min_range, max_range = transformer.feature_range
     range_span = max_range - min_range
     # Handle range_span == 0 separately to avoid division by zero with inv_range_span
     inv_range_span = range_span == 0.0 ? 0.0 : 1.0 / range_span # Will be used if range_span != 0
 
-    original_cols = Vector{AbstractVector{Float64}}()
+    # Pre-allocate result vector with known size
+    original_cols = Vector{AbstractVector{T}}(undef, length(Xtransformed_col_names))
 
-    for (j, name) in enumerate(Xtransformed_col_names)
-        col_data_abstract = Tables.getcolumn(Xtransformed, name)
-        # Avoid collect if already an AbstractVector
-        col_vector = if col_data_abstract isa AbstractVector
-            col_data_abstract
-        else
-            collect(col_data_abstract)
-        end
+    for (col_idx, name) in enumerate(Xtransformed_col_names)
+        col_vector = _extract_column_vector(Xtransformed, name)
 
-        if j > length(fitresult.quantiles_list)
-            error(
-                "Mismatch in column count or order for inverse_transform for column: $name"
-            )
-        end
-        current_quantiles = fitresult.quantiles_list[j]
+        # Use feature name to get correct quantiles
+        feature_idx = feature_to_idx[name]
+        current_quantiles = fitresult.quantiles_list[feature_idx]
         n_quantiles = length(current_quantiles)
 
-        new_col = similar(col_vector, Float64)
+        new_col = similar(col_vector, T)
         if n_quantiles == 0
             fill!(new_col, NaN) # No quantiles, cannot determine original value
         elseif n_quantiles == 1
             fill!(new_col, current_quantiles[1]) # All values map to the single quantile
         else
             n_quantiles_minus_1 = n_quantiles - 1 # Cache this
-            for i in eachindex(col_vector)
+            @inbounds for i in eachindex(col_vector)
                 s_val = col_vector[i]
-                p = 0.0
+                p = zero(T)
 
                 if !isfinite(s_val)
                     new_col[i] = NaN
                     continue
                 end
 
-                if range_span == 0 # min_range == max_range: use 0.5, implying the middle of the ECDF.
-                    p = 0.5
+                if range_span == 0.0 # min_range == max_range: use MIDPOINT_PROBABILITY, implying the middle of the ECDF.
+                    p = MIDPOINT_PROBABILITY
                 else
                     p = (s_val - min_range) * inv_range_span
                 end
 
-                p = clamp(p, 0.0, 1.0) # Ensure p is within [0,1]
+                p = clamp(p, zero(T), one(T)) # Ensure p is within [0,1]
 
                 # Interpolate based on p to find the original value from quantiles
                 # idx_float is the fractional index into the quantiles array
-                idx_float = p * n_quantiles_minus_1 + 1.0
+                idx_float = p * n_quantiles_minus_1 + one(T)
 
                 lower_idx = floor(Int, idx_float)
                 upper_idx = ceil(Int, idx_float)
@@ -382,14 +409,14 @@ function MMI.inverse_transform(transformer::QuantileTransformer, fitresult, Xtra
                     weight = idx_float - lower_idx
                     val_lower = current_quantiles[lower_idx]
                     val_upper = current_quantiles[upper_idx]
-                    new_col[i] = (1.0 - weight) * val_lower + weight * val_upper
+                    new_col[i] = (one(T) - weight) * val_lower + weight * val_upper
                 end
             end
         end
-        push!(original_cols, new_col)
+        original_cols[col_idx] = new_col
     end
 
-    output_col_names = fitresult.col_names
+    output_col_names = fitresult.features
     if length(original_cols) != length(output_col_names)
         error(
             "Internal error: Number of inverse_transformed columns " *
@@ -397,12 +424,86 @@ function MMI.inverse_transform(transformer::QuantileTransformer, fitresult, Xtra
         )
     end
 
-    return NamedTuple{Tuple(Symbol.(output_col_names))}(Tuple(original_cols))
+    return _build_named_tuple(output_col_names, original_cols)
+end
+
+# Helpers
+function _process_empty_quantiles(col_vector, min_range, max_range, T::Type)
+    new_col = similar(col_vector, T)
+    fill!(new_col, (min_range + max_range) * MIDPOINT_PROBABILITY)
+    return new_col
+end
+
+function _process_single_quantile(
+    col_vector, quantile_value, min_range, max_range, range_span, T::Type
+)
+    new_col = similar(col_vector, T)
+    q_val = quantile_value
+    @inbounds for i in eachindex(col_vector)
+        val = float(col_vector[i])
+        p = if !isfinite(val)
+            MIDPOINT_PROBABILITY
+        elseif val < q_val
+            zero(T)
+        elseif val > q_val
+            one(T)
+        else # val == q_val
+            MIDPOINT_PROBABILITY # Convention for single quantile: map to midpoint
+        end
+        new_col[i] = p * range_span + min_range
+    end
+    return new_col
+end
+
+function _interpolate_quantile_value(val, quantiles, inv_n_quantiles_minus_1, T::Type)
+    # Find insertion point
+    idx = searchsortedlast(quantiles, val)
+    q_i = quantiles[idx]
+    p_i = (idx - 1) * inv_n_quantiles_minus_1
+
+    if val == q_i # Value falls exactly on a quantile
+        return p_i
+    else # Interpolate between q_i and q_i_plus_1
+        q_i_plus_1 = quantiles[idx + 1]
+        p_i_plus_1 = idx * inv_n_quantiles_minus_1
+
+        denominator = q_i_plus_1 - q_i
+        fraction = denominator == zero(T) ? zero(T) : (val - q_i) / denominator
+        return p_i + fraction * (p_i_plus_1 - p_i)
+    end
+end
+
+function _process_multiple_quantiles(
+    col_vector, quantiles, min_range, max_range, range_span, T::Type
+)
+    new_col = similar(col_vector, T)
+    q_min = quantiles[1]
+    q_max = quantiles[end]
+    n_quantiles = length(quantiles)
+    # Pre-calculate inverse of (n_quantiles - 1) to avoid repeated division
+    inv_n_quantiles_minus_1 = one(T) / (n_quantiles - 1)
+
+    @inbounds for i in eachindex(col_vector)
+        val = float(col_vector[i])
+        p = zero(T)
+
+        if !isfinite(val)
+            p = MIDPOINT_PROBABILITY # Convention for non-finite values: map to midpoint of target range
+        elseif val <= q_min
+            p = zero(T)
+        elseif val >= q_max
+            p = one(T)
+        else
+            p = _interpolate_quantile_value(val, quantiles, inv_n_quantiles_minus_1, T)
+        end
+        new_col[i] = p * range_span + min_range
+    end
+    return new_col
 end
 
 # Fitted parameters
 function MMI.fitted_params(::QuantileTransformer, fitresult)
-    return (quantiles_list=fitresult.quantiles_list, col_names=fitresult.col_names)
+    return (quantiles_list=fitresult.quantiles_list,)
 end
 
 # MLJ traits

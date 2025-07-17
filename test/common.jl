@@ -2,12 +2,13 @@ using Test
 using LinearAlgebra # For norm, etc.
 using SparseArrays # For sparse matrix tests
 using Statistics # For mean, etc.
+using Random
 
 include("../src/common/functions.jl")
 
 # Tests for functions in common/functions.jl
-@testset "Common Functions Tests" begin
-    @testset "safelog Tests" begin
+@testset "Common Functions" begin
+    @testset "safelog" begin
         @test safelog(1.0) == log(1.0)
         @test safelog(smallest) == log(smallest)
         @test safelog(0.0; tol=smallest) == log(smallest)
@@ -27,7 +28,7 @@ include("../src/common/functions.jl")
         @test safelog(m; tol=smallest) ≈ m_safe
     end
 
-    @testset "entropy Tests" begin
+    @testset "entropy" begin
         # Uniform distribution
         W1 = [0.25, 0.25, 0.25, 0.25]
         @test entropy(W1) ≈ 2 * log(2)
@@ -50,7 +51,7 @@ include("../src/common/functions.jl")
             -(0.1 * log(0.1) + 0.2 * log(0.2) + 0.4 * log(0.4) + 0.3 * log(0.3))
     end
 
-    @testset "cross_entropy Tests" begin
+    @testset "cross_entropy" begin
         # Basic matrices (Float64)
         A_m1 = [0.1 0.9; 0.8 0.2]
         B_m1 = [0.2 0.8; 0.7 0.3]
@@ -115,7 +116,7 @@ include("../src/common/functions.jl")
 
     end
 
-    @testset "assign_closest Tests" begin
+    @testset "assign_closest" begin
         distances1 = [
             1.0 5.0 3.0  # Column 1 min is 0.5 at index 2
             0.5 2.0 4.0  # Column 2 min is 1.0 at index 3
@@ -135,7 +136,7 @@ include("../src/common/functions.jl")
         @test assign_closest(distances3) == 2
     end
 
-    @testset "assign_closest! (Dense) Tests" begin
+    @testset "assign_closest! (Dense)" begin
         distances = [
             1.0 5.0 3.0
             0.5 2.0 4.0
@@ -155,7 +156,7 @@ include("../src/common/functions.jl")
         @test Gamma_int == expected_Gamma
     end
 
-    @testset "assign_closest! (Sparse) Tests" begin
+    @testset "assign_closest! (Sparse)" begin
         distances = [
             1.0 5.0 3.0 0.2
             0.5 2.0 4.0 0.5
@@ -179,7 +180,7 @@ include("../src/common/functions.jl")
         @test Gamma_sparse_bool_2.rowval == expected_rowval
     end
 
-    @testset "left_stochastic Tests" begin
+    @testset "left_stochastic" begin
         A = [1.0 2.0; 3.0 4.0]
         A_orig = copy(A)
         LS_A = left_stochastic(A)
@@ -198,7 +199,7 @@ include("../src/common/functions.jl")
         @test sum(LS_C; dims=1) ≈ [1.0 1.0] # Each column sums to 1
     end
 
-    @testset "left_stochastic! Tests" begin
+    @testset "left_stochastic!" begin
         A = [1.0 2.0; 3.0 4.0]
         A_copy_for_check = copy(A)
         LS_A_ref = left_stochastic(A_copy_for_check) # Get expected result
@@ -214,7 +215,7 @@ include("../src/common/functions.jl")
         @test sum(B; dims=1) ≈ [1.0 1.0] # Each column sums to 1
     end
 
-    @testset "right_stochastic Tests" begin
+    @testset "right_stochastic" begin
         A = [1.0 3.0; 2.0 4.0] # Transpose of the left_stochastic test matrix
         A_orig = copy(A)
         RS_A = right_stochastic(A)
@@ -233,7 +234,7 @@ include("../src/common/functions.jl")
         @test sum(RS_C; dims=2) ≈ reshape([1.0, 1.0], 2, 1) # Each row sums to 1
     end
 
-    @testset "right_stochastic! Tests" begin
+    @testset "right_stochastic!" begin
         A = [1.0 3.0; 2.0 4.0]
         A_copy_for_check = copy(A)
         RS_A_ref = right_stochastic(A_copy_for_check) # Get expected result
@@ -249,7 +250,7 @@ include("../src/common/functions.jl")
         @test sum(B; dims=2) ≈ reshape([1.0, 1.0], 2, 1) # Each row sums to 1
     end
 
-    @testset "normalise! Tests" begin
+    @testset "normalise!" begin
         # Basic normalization test (Float64)
         W = [1.0, 2.0, 3.0]
         W_orig = copy(W)
@@ -316,7 +317,7 @@ include("../src/common/functions.jl")
         @test all(W_small_f32 .≥ 0.0f0)  # At least check non-negative
     end
 
-    @testset "Softmax Functions Tests" begin
+    @testset "Softmax Functions" begin
         # Helper function for checking sum-to-one property
         # dim=1 for columns, dim=2 for rows (not used here, but general)
         function check_sum_to_one(M, dim)
@@ -433,7 +434,7 @@ include("../src/common/functions.jl")
         end
     end
 
-    @testset "effective_dimension Tests" begin
+    @testset "effective_dimension" begin
         # Test uniform distribution
         @testset "uniform distribution" begin
             W_uniform = [0.25, 0.25, 0.25, 0.25]

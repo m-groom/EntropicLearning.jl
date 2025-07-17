@@ -18,8 +18,7 @@ This helps to avoid errors when `x` (or its elements) are zero or negative.
 
 # Keyword Arguments
 - `tol::Real`: The tolerance level. Values of `x` (or its elements) below `tol` will
-  be replaced by `tol` before taking the logarithm. Defaults to `smallest` (which is
-  `eps()` in this context, as defined in `src/common/functions.jl`).
+  be replaced by `tol` before taking the logarithm. Defaults to `eps()`.
 
 # Returns
 - `Real` or `AbstractArray{<:Real}`: The natural logarithm of `max(x, tol)` (or
@@ -46,10 +45,10 @@ or very small, ensuring numerical stability.
 
 # Keyword Arguments
 - `tol::Real`: Tolerance level passed to `safelog`. Values of `W[i]` below `tol`
-  will be replaced by `tol` before taking the logarithm. Defaults to `smallest`.
+  will be replaced by `tol` before taking the logarithm. Defaults to `eps()`.
 
 # Returns
-- `Float64`: The computed Shannon entropy of `W`.
+- `H::Float64`: The computed Shannon entropy of `W`.
 
 """
 function entropy(W::AbstractArray{Tr}; tol::Real=smallest) where {Tr<:Real}
@@ -76,10 +75,10 @@ numerical stability. This provides a general implementation for N-dimensional ar
 
 # Keyword Arguments
 - `tol::Real`: Tolerance level passed to `safelog`. Values of `B[i]` below `tol`
-  will be replaced by `tol` before taking the logarithm. Defaults to `smallest`.
+  will be replaced by `tol` before taking the logarithm. Defaults to `eps()`.
 
 # Returns
-- `promote_type(T1, T2, Float64)`: The computed cross-entropy. The type is
+- `C::promote_type(T1, T2, Float64)`: The computed cross-entropy. The type is
   determined by the element types of `A`, `B`, and `Float64` to ensure precision.
 """
 function cross_entropy(
@@ -219,9 +218,9 @@ end
 """
     left_stochastic(A::AbstractMatrix{Tf}) where {Tf<:AbstractFloat}
 
-Normalizes the columns of matrix `A` so that each column sums to 1.
+Normalises the columns of matrix `A` so that each column sums to 1.
 
-This creates a new matrix where each column is normalized using `normalise!`,
+This creates a new matrix where each column is normalised using `normalise!`,
 which provides robust handling of edge cases (zero sums, NaN, Inf) by falling
 back to uniform distribution when needed. The original matrix `A` is not modified.
 
@@ -229,11 +228,11 @@ back to uniform distribution when needed. The original matrix `A` is not modifie
 - `A::AbstractMatrix{Tf}`: The input matrix. `Tf` is an `AbstractFloat` type.
 
 # Returns
-- `AbstractMatrix{Tf}`: A new matrix with columns normalized to sum to 1.
+- `AbstractMatrix{Tf}`: A new matrix with columns normalised to sum to 1.
 
 # See Also
 - [`left_stochastic!`](@ref): In-place version of this function.
-- [`right_stochastic`](@ref): Normalizes rows to sum to 1.
+- [`right_stochastic`](@ref): Normalises rows to sum to 1.
 - [`right_stochastic!`](@ref): In-place version of `right_stochastic`.
 - [`normalise!`](@ref): The underlying function used for each column.
 """
@@ -246,21 +245,21 @@ end
 """
     left_stochastic!(A::AbstractMatrix{Tf}) where {Tf<:AbstractFloat}
 
-Normalizes the columns of matrix `A` in-place so that each column sums to 1.
+Normalises the columns of matrix `A` in-place so that each column sums to 1.
 
-Each column is normalized using `normalise!`, which provides robust handling of
+Each column is normalised using `normalise!`, which provides robust handling of
 edge cases (zero sums, NaN, Inf) by falling back to uniform distribution when needed.
 The matrix `A` is modified directly.
 
 # Arguments
-- `A::AbstractMatrix{Tf}`: The matrix to be normalized in-place. `Tf` is an `AbstractFloat` type.
+- `A::AbstractMatrix{Tf}`: The matrix to be normalised in-place. `Tf` is an `AbstractFloat` type.
 
 # Returns
-- `AbstractMatrix{Tf}`: The modified matrix `A` with columns normalized.
+- `AbstractMatrix{Tf}`: The modified matrix `A` with columns normalised.
 
 # See Also
 - [`left_stochastic`](@ref): Non-mutating version of this function.
-- [`right_stochastic`](@ref): Normalizes rows to sum to 1.
+- [`right_stochastic`](@ref): Normalises rows to sum to 1.
 - [`right_stochastic!`](@ref): In-place version of `right_stochastic`.
 - [`normalise!`](@ref): The underlying function used for each column.
 """
@@ -274,9 +273,9 @@ end
 """
     right_stochastic(A::AbstractMatrix{Tf}) where {Tf<:AbstractFloat}
 
-Normalizes the rows of matrix `A` so that each row sums to 1.
+Normalises the rows of matrix `A` so that each row sums to 1.
 
-This creates a new matrix where each row is normalized using `normalise!`,
+This creates a new matrix where each row is normalised using `normalise!`,
 which provides robust handling of edge cases (zero sums, NaN, Inf) by falling
 back to uniform distribution when needed. The original matrix `A` is not modified.
 
@@ -284,11 +283,11 @@ back to uniform distribution when needed. The original matrix `A` is not modifie
 - `A::AbstractMatrix{Tf}`: The input matrix. `Tf` is an `AbstractFloat` type.
 
 # Returns
-- `AbstractMatrix{Tf}`: A new matrix with rows normalized to sum to 1.
+- `AbstractMatrix{Tf}`: A new matrix with rows normalised to sum to 1.
 
 # See Also
 - [`right_stochastic!`](@ref): In-place version of this function.
-- [`left_stochastic`](@ref): Normalizes columns to sum to 1.
+- [`left_stochastic`](@ref): Normalises columns to sum to 1.
 - [`left_stochastic!`](@ref): In-place version of `left_stochastic`.
 - [`normalise!`](@ref): The underlying function used for each row.
 """
@@ -301,21 +300,21 @@ end
 """
     right_stochastic!(A::AbstractMatrix{Tf}) where {Tf<:AbstractFloat}
 
-Normalizes the rows of matrix `A` in-place so that each row sums to 1.
+Normalises the rows of matrix `A` in-place so that each row sums to 1.
 
-Each row is normalized using `normalise!`, which provides robust handling of
+Each row is normalised using `normalise!`, which provides robust handling of
 edge cases (zero sums, NaN, Inf) by falling back to uniform distribution when needed.
 The matrix `A` is modified directly.
 
 # Arguments
-- `A::AbstractMatrix{Tf}`: The matrix to be normalized in-place. `Tf` is an `AbstractFloat` type.
+- `A::AbstractMatrix{Tf}`: The matrix to be normalised in-place. `Tf` is an `AbstractFloat` type.
 
 # Returns
-- `AbstractMatrix{Tf}`: The modified matrix `A` with rows normalized.
+- `AbstractMatrix{Tf}`: The modified matrix `A` with rows normalised.
 
 # See Also
 - [`right_stochastic`](@ref): Non-mutating version of this function.
-- [`left_stochastic`](@ref): Normalizes columns to sum to 1.
+- [`left_stochastic`](@ref): Normalises columns to sum to 1.
 - [`left_stochastic!`](@ref): In-place version of `left_stochastic`.
 - [`normalise!`](@ref): The underlying function used for each row.
 """
@@ -329,7 +328,7 @@ end
 """
     normalise!(W::AbstractVector{Tf}) where {Tf<:AbstractFloat}
 
-Normalizes a vector `W` in-place so that its elements sum to 1.
+Normalises a vector `W` in-place so that its elements sum to 1.
 
 If the sum of elements in `W` is greater than `eps(Tf)`, each element is divided
 by the sum. Otherwise, if the sum is too small, the vector is filled with a
@@ -339,14 +338,14 @@ This function is particularly useful for normalizing probability or weight vecto
 while handling numerical edge cases where the sum might be zero or very small.
 
 # Arguments
-- `W::AbstractVector{Tf}`: The vector to be normalized in-place. `Tf` is an `AbstractFloat` type.
+- `W::AbstractVector{Tf}`: The vector to be normalised in-place. `Tf` is an `AbstractFloat` type.
 
 # Returns
 - `nothing`: The function modifies `W` in-place.
 
 # See Also
-- [`left_stochastic!`](@ref): Normalizes matrix columns to sum to 1.
-- [`right_stochastic!`](@ref): Normalizes matrix rows to sum to 1.
+- [`left_stochastic!`](@ref): Normalises matrix columns to sum to 1.
+- [`right_stochastic!`](@ref): Normalises matrix rows to sum to 1.
 """
 function normalise!(W::AbstractVector{Tf}) where {Tf<:AbstractFloat}
     sum_W = sum(W)
@@ -567,7 +566,7 @@ are "active" in the distribution.
   will compute the effective dimension regardless.
 
 # Keyword Arguments
-- `normalise::Bool`: If `true`, the effective dimension is normalized by dividing by
+- `normalise::Bool`: If `true`, the effective dimension is normalised by dividing by
   `length(W)`. Defaults to `false`.
 
 # Returns
@@ -596,4 +595,17 @@ function effective_dimension(
     end
 
     return Deff
+end
+
+# Helper function to get RNG
+get_rng(random_state::Int) = Xoshiro(random_state)
+get_rng(random_state::AbstractRNG) = random_state
+
+# Helper function to get the promoted eltype of a table
+function get_promoted_eltype(table)
+    @assert Tables.istable(table) "Input must be a Tables.jl compatible table"
+    col_names = Tables.columnnames(table)
+    # Get all column types and promote them to find common supertype
+    col_types = [Tables.columntype(table, name) for name in col_names]
+    return promote_type(col_types...)
 end
