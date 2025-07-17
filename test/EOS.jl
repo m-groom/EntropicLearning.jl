@@ -337,7 +337,6 @@ end
         y = MLJBase.categorical(vcat(y_clean, y_outliers))
 
         # Fit EOS model
-        eos_model = EOSWrapper(model; alpha=0.01, max_iter=100)
         mach = fit!(machine(eos_model, X, y), verbosity=0)
 
         # Get outlier scores
