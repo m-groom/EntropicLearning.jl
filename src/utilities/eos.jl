@@ -49,7 +49,44 @@ function eos_distances(model, args...)
     )
 end
 
-# TODO: add documentation in case users need to override this
+"""
+    eos_loss(model, distances, weights, fitresult, args...)
+
+Compute the total EOS loss for a fitted model.
+
+This function calculates the overall loss for the Entropic Outlier Sparsification (EOS)
+algorithm. While the default implementation is the weighted sum of sample distances
+(`dot(weights, distances)`), models can override this method to incorporate custom
+loss calculations, such as including additional regularisation terms that depend on the
+sample weights.
+
+This is particularly useful when the loss function for a model is more complex than
+a simple sum of per-sample distances.
+
+# Arguments
+- `model`: The MLJ model instance.
+- `distances::AbstractVector`: Vector of distances/losses for each sample, calculated from
+  `eos_distances`.
+- `weights::AbstractVector`: Vector of EOS weights for each sample, calculated from `eos_weights`.
+- `fitresult`: The result from fitting the model.
+- `args...`: The original data (`X`, `y`, etc.) that was used for fitting. This allows for
+   loss calculations that depend on the original data.
+
+# Returns
+- A scalar value representing the total loss.
+
+# Default Implementation
+```julia
+function eos_loss(model, distances::AbstractVector, weights::AbstractVector, fitresult, args...)
+    return dot(weights, distances)
+end
+```
+# See Also
+- [`eos_distances`](@ref): Compute distances/losses for each sample in X using the fitted model.
+- [`eos_weights`](@ref): Calculate EOS weights from distances using the closed-form solution
+  from Horenko (2022).
+
+"""
 function eos_loss end
 
 # Default implementation of eos_loss
@@ -123,6 +160,10 @@ Calculate EOS weights for data (args...) using a fitted model.
 # Returns
 - Vector of weights in [0,1] that sum to 1
 
+# See Also
+- [`eos_weights`](@ref): Calculate EOS weights from distances using the closed-form solution
+  from Horenko (2022).
+
 """
 function calculate_eos_weights(model, fitresult, alpha::Real, args...)
     model_args = MLJModelInterface.reformat(model, args...)
@@ -145,6 +186,12 @@ Higher scores indicate more outlying samples.
 
 # Returns
 - Vector of outlier scores in (0,1]
+
+# See Also
+- [`eos_weights`](@ref): Calculate EOS weights from distances using the closed-form solution
+  from Horenko (2022).
+- [`calculate_eos_weights`](@ref): Calculate EOS weights for data (args...) using a fitted model.
+
 """
 function eos_outlier_scores(model, fitresult, alpha::Real, args...)
     weights = calculate_eos_weights(model, fitresult, alpha, args...)
@@ -238,6 +285,11 @@ the corresponding `eos_weights` method to find the `alpha` that matches the `tar
 
 # Returns
 - `(weights, alpha)`: A tuple with the calculated `weights` and the found `alpha`.
+
+# See Also
+- [`eos_weights`](@ref): Calculate EOS weights from distances using the closed-form solution
+  from Horenko (2022).
+
 """
 function calculate_eos_weights(
     model,
@@ -276,6 +328,12 @@ It serves as a convenience wrapper around `calculate_eos_weights`.
 
 # Returns
 - `(scores, alpha)`: A tuple with the calculated outlier scores and the found `alpha`.
+
+# See Also
+- [`eos_weights`](@ref): Calculate EOS weights from distances using the closed-form solution
+  from Horenko (2022).
+- [`calculate_eos_weights`](@ref): Calculate EOS weights for data (args...) using a fitted model.
+
 """
 function eos_outlier_scores(
     model,
