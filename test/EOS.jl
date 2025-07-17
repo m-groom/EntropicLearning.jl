@@ -626,7 +626,7 @@ end
             @test report_full.loss[i] <= report_full.loss[i - 1] + 1e-10
         end
 
-        # Test that total iterations are equivalent (within small tolerance)
+        # Test that total iterations are equivalent
         total_iter_full = report_full.iterations
         total_iter_partial = report_partial.iterations
         @test total_iter_full == total_iter_partial
