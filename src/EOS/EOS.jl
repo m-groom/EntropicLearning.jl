@@ -287,6 +287,7 @@ function MMI.fit(eos::EOSWrapper, verbosity::Int, args, T_instances::Int, Tf::Ty
         loss=loss[1:iterations + 1],
         timings=to,
         ESS=EntropicLearning.effective_dimension(weights),
+        weights=weights,
         inner_report=inner_report,
     )
     cache = inner_cache
@@ -302,19 +303,31 @@ end
 # ==============================================================================
 # Transform and Predict Methods
 # ==============================================================================
-# TODO: refactor this and have transform return outlier scores instead of weights
+
 function MMI.transform(eos::EOSWrapper, fitresult::EOSFitResult, args)
-    T_train = length(fitresult.distances)
+    T_train = length(fitresult.distances)   # Number of training instances
+    # Get distances for the new data
     dist = EntropicLearning.eos_distances(eos.model, fitresult.inner_fitresult, args...)
-    T_test = length(dist)
+    T_test = length(dist)   # Number of test instances
+
+    # Combine training and test distances
     append!(dist, fitresult.distances)
+
+    # Calculate the range of alpha values to search over to match the training ESS
     amin = min(T_test/T_train, T_train/T_test)
     amax = max(T_test/T_train, T_train/T_test)
     alpha_range = (0.1 * amin * eos.alpha, 10 * amax * eos.alpha)
     ESS = fitresult.ESS
+
+    # Calculate the weights and new alpha
     weights_full, alpha = EntropicLearning.eos_weights(dist, alpha_range, ESS, atol=eos.atol)
+    # Convert weights to outlier scores
+    scores_full = EntropicLearning.outlier_scores(weights_full)
+
+    # Extract the weights and scores for the test data
     weights_new = weights_full[1:T_test]
-    return weights_new, (alpha=alpha,)
+    scores_new = scores_full[1:T_test]
+    return scores_new, (weights=weights_new, alpha=alpha)
 end
 
 # For supervised models only
@@ -323,12 +336,15 @@ function MMI.predict(
     fitresult::EOSFitResult,
     args,
 )
+    # Get predictions from the inner model
     result = MMI.predict(eos.model, fitresult.inner_fitresult, args...)
-    weights, report = MMI.transform(eos, fitresult, args)
+    # Get outlier scores for the new data
+    scores, report = MMI.transform(eos, fitresult, args)
+    # Return the predictions and outlier scores
     if :predict in MMI.reporting_operations(typeof(eos.model))
-        return result[1], (weights=weights, inner_report_pred=result[2], report...)
+        return result[1], (scores=scores, report..., inner_report=result[2])
     else
-        return result, (weights=weights, report...)
+        return result, (scores=scores, report...)
     end
 end
 

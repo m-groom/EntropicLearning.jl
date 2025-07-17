@@ -283,10 +283,10 @@ end
             ŷ = predict(mach, X_test)
             @test length(ŷ) == nrows(X_test)
 
-            # Test transform (weights)
-            weights = transform(mach, X_test)
-            @test length(weights) == nrows(X_test)
-            @test all(0 .<= weights .<= 1)
+            # Test transform
+            scores = transform(mach, X_test)
+            @test length(scores) == nrows(X_test)
+            @test all(0 .<= scores .<= 1)
         end
 
         @testset "Convergence behavior" begin
