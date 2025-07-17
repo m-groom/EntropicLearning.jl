@@ -48,7 +48,12 @@ Base.fieldnames(::Type{<:EOSWrapper}) = (:model, :alpha, :tol, :max_iter, :atol)
 
 # External keyword constructor
 function EOSWrapper(
-    args...; model=nothing, alpha::Real=1.0, tol::Real=1e-8, max_iter::Integer=100, atol::Real=1e-6
+    args...;
+    model=nothing,
+    alpha::Real=1.0,
+    tol::Real=1e-8,
+    max_iter::Integer=100,
+    atol::Real=1e-6,
 )
     length(args) < 2 || throw(ArgumentError("Too many positional arguments"))
 
@@ -84,7 +89,11 @@ function EOSWrapper(
     end
     # Check that wrapped model supports weights
     if !MMI.supports_weights(typeof(wrapper.model))
-        throw(ArgumentError("Wrapped model type $(typeof(wrapper.model)) must support sample weights."))
+        throw(
+            ArgumentError(
+                "Wrapped model type $(typeof(wrapper.model)) must support sample weights."
+            ),
+        )
     end
 
     message = MMI.clean!(wrapper)
@@ -128,7 +137,7 @@ function MMI.reports_feature_importances(::Type{<:EOSWrapper{M}}) where {M}
 end
 MMI.is_pure_julia(::Type{<:EOSWrapper{M}}) where {M} = MMI.is_pure_julia(M)
 MMI.supports_training_losses(::Type{<:EOSWrapper}) = true
-MMI.reporting_operations(::Type{<:EOSWrapper}) = (:predict,:transform)
+MMI.reporting_operations(::Type{<:EOSWrapper}) = (:predict, :transform)
 
 # Input/output scitypes - inherit from wrapped model
 MMI.input_scitype(::Type{<:EOSWrapper{M}}) where {M} = MMI.input_scitype(M)
@@ -176,12 +185,23 @@ function MMI.fit(eos::EOSWrapper, verbosity::Int, args, T_instances::Int, Tf::Ty
 
     # --- Training ---
     inner_fitresult, inner_cache, inner_report, iterations, to = _fit!(
-        weights, distances, loss, inner_fitresult, inner_cache, inner_report, eos, verbosity, args, to
+        weights,
+        distances,
+        loss,
+        inner_fitresult,
+        inner_cache,
+        inner_report,
+        eos,
+        verbosity,
+        args,
+        to,
     )
 
     # --- Return fitresult, cache and report ---
     fitresult = EOSFitResult(
-        inner_fitresult, distances, EntropicLearning.effective_dimension(weights; normalise=true)
+        inner_fitresult,
+        distances,
+        EntropicLearning.effective_dimension(weights; normalise=true),
     )
     report = (
         iterations=iterations,
@@ -191,16 +211,21 @@ function MMI.fit(eos::EOSWrapper, verbosity::Int, args, T_instances::Int, Tf::Ty
         weights=weights,
         inner_report=inner_report,
     )
-    cache = (
-        report...,
-        inner_cache=inner_cache,
-    )
+    cache = (report..., inner_cache=inner_cache)
 
     return (fitresult, cache, report)
 end
 
 # Common implementation for update
-function MMI.update(eos::EOSWrapper, verbosity::Int, fitresult::EOSFitResult, old_cache, args, T_instances::Int, Tf::Type)
+function MMI.update(
+    eos::EOSWrapper,
+    verbosity::Int,
+    fitresult::EOSFitResult,
+    old_cache,
+    args,
+    T_instances::Int,
+    Tf::Type,
+)
     # Get the timer
     to = old_cache.timings
 
@@ -220,12 +245,23 @@ function MMI.update(eos::EOSWrapper, verbosity::Int, fitresult::EOSFitResult, ol
 
     # --- Training ---
     inner_fitresult, inner_cache, inner_report, iterations, to = _fit!(
-        weights, distances, loss, inner_fitresult, inner_cache, inner_report, eos, verbosity, args, to
+        weights,
+        distances,
+        loss,
+        inner_fitresult,
+        inner_cache,
+        inner_report,
+        eos,
+        verbosity,
+        args,
+        to,
     )
 
     # --- Return fitresult, cache and report ---
     fitresult = EOSFitResult(
-        inner_fitresult, distances, EntropicLearning.effective_dimension(weights; normalise=true)
+        inner_fitresult,
+        distances,
+        EntropicLearning.effective_dimension(weights; normalise=true),
     )
     report = (
         iterations=iterations + old_cache.iterations,
@@ -235,10 +271,7 @@ function MMI.update(eos::EOSWrapper, verbosity::Int, fitresult::EOSFitResult, ol
         weights=weights,
         inner_report=inner_report,
     )
-    cache = (
-        report...,
-        inner_cache=inner_cache,
-    )
+    cache = (report..., inner_cache=inner_cache)
 
     return (fitresult, cache, report)
 end
@@ -263,7 +296,9 @@ function MMI.transform(eos::EOSWrapper, fitresult::EOSFitResult, args)
     ESS = fitresult.ESS
 
     # Calculate the weights and new alpha
-    weights_full, alpha = EntropicLearning.eos_weights(dist, alpha_range, ESS, atol=eos.atol)
+    weights_full, alpha = EntropicLearning.eos_weights(
+        dist, alpha_range, ESS; atol=eos.atol
+    )
     # Convert weights to outlier scores
     scores_full = EntropicLearning.outlier_scores(weights_full)
 

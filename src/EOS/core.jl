@@ -1,7 +1,5 @@
 # Initialisation for fitting an EOS model
-function initialise(
-    eos::EOSWrapper, verbosity::Int, args, T_instances::Int, Tf::Type
-)
+function initialise(eos::EOSWrapper, verbosity::Int, args, T_instances::Int, Tf::Type)
     # Perform an initial fit with uniform weights
     weights = fill(Tf(1/T_instances), T_instances)
     inner_fitresult, inner_cache, inner_report = MMI.fit(eos.model, verbosity - 1, args...)
@@ -10,11 +8,12 @@ function initialise(
 
     # Store losses for convergence tracking
     loss = fill(Tf(Inf), eos.max_iter + 1)
-    loss[1] = EntropicLearning.eos_loss(eos.model, distances, weights, inner_fitresult, args...) - eos.alpha * EntropicLearning.entropy(weights)
+    loss[1] =
+        EntropicLearning.eos_loss(eos.model, distances, weights, inner_fitresult, args...) -
+        eos.alpha * EntropicLearning.entropy(weights)
 
     return weights, distances, loss, inner_fitresult, inner_cache, inner_report
 end
-
 
 # Fit function
 function _fit!(
@@ -24,7 +23,10 @@ function _fit!(
     inner_fitresult,
     inner_cache,
     inner_report,
-    eos::EOSWrapper, verbosity::Int, args, to::TimerOutput
+    eos::EOSWrapper,
+    verbosity::Int,
+    args,
+    to::TimerOutput,
 ) where {Tf<:AbstractFloat}
     # Initialise iteration counter
     iterations = 0
@@ -46,10 +48,15 @@ function _fit!(
             )
 
             # w-step: Update weights using closed-form solution
-            @timeit to "update_weights" EntropicLearning.update_weights!(weights, distances, eos.alpha)
+            @timeit to "update_weights" EntropicLearning.update_weights!(
+                weights, distances, eos.alpha
+            )
 
             # Compute objective function for convergence check
-            @timeit to "loss" loss[iter + 1] = EntropicLearning.eos_loss(eos.model, distances, weights, inner_fitresult, args...) - eos.alpha * EntropicLearning.entropy(weights)
+            @timeit to "loss" loss[iter + 1] =
+                EntropicLearning.eos_loss(
+                    eos.model, distances, weights, inner_fitresult, args...
+                ) - eos.alpha * EntropicLearning.entropy(weights)
 
             # Check if loss function has increased
             if loss[iter + 1] - loss[iter] > eps(Tf)
@@ -70,6 +77,3 @@ function _fit!(
 
     return inner_fitresult, inner_cache, inner_report, iterations, to
 end
-
-
-# TODO: refactor other components of MMI.fit into separate functions

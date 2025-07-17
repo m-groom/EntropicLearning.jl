@@ -140,7 +140,9 @@ end
             alpha_range = (0.1, 10.0)
             target_Deff = 0.6
 
-            result = calculate_eos_weights(model, mach.fitresult, alpha_range, target_Deff, X, y)
+            result = calculate_eos_weights(
+                model, mach.fitresult, alpha_range, target_Deff, X, y
+            )
             weights, found_alpha = result.weights, result.alpha
 
             @test length(weights) == nrows(X)
@@ -168,7 +170,9 @@ end
             alpha_range = (0.1, 10.0)
             target_Deff = 0.6
 
-            result = eos_outlier_scores(model, mach.fitresult, alpha_range, target_Deff, X, y)
+            result = eos_outlier_scores(
+                model, mach.fitresult, alpha_range, target_Deff, X, y
+            )
             scores, found_alpha = result.scores, result.alpha
 
             @test length(scores) == nrows(X)
@@ -222,7 +226,6 @@ end
     rep = MLJBase.report(mach)
 
     @testset "Constructor and validation" begin
-
         @testset "Valid construction" begin
             # Positional argument
             eos1 = EOSWrapper(eSPAClassifier(K=5), alpha=0.1, tol=1e-6, max_iter=200)
@@ -263,7 +266,6 @@ end
     end
 
     @testset "MLJ integration" begin
-
         @testset "Basic fitting and prediction" begin
             # Check fitresult structure
             @test mach.fitresult isa EntropicLearning.EOS.EOSFitResult
@@ -279,7 +281,9 @@ end
             @test haskey(rep, :timings)
 
             # Test prediction
-            X_test, _ = make_blobs(10, D_features; centers=K_clusters, cluster_std=1.0, rng=456)
+            X_test, _ = make_blobs(
+                10, D_features; centers=K_clusters, cluster_std=1.0, rng=456
+            )
             ŷ = predict(mach, X_test)
             @test length(ŷ) == nrows(X_test)
 
@@ -295,7 +299,7 @@ end
             if length(losses) > 1
                 # Allow for small numerical increases
                 for i in 2:length(losses)
-                    @test losses[i] - losses[i-1] <= 1e-10
+                    @test losses[i] - losses[i - 1] <= 1e-10
                 end
             end
         end
@@ -318,8 +322,12 @@ end
             mach_large = fit!(machine(eos_large, X_table, y_cat), verbosity=0)
 
             # Large alpha should lead to more uniform weights (higher entropy)
-            entropy_small = EntropicLearning.entropy(MLJModelInterface.fitted_params(mach_small).weights)
-            entropy_large = EntropicLearning.entropy(MLJModelInterface.fitted_params(mach_large).weights)
+            entropy_small = EntropicLearning.entropy(
+                MLJModelInterface.fitted_params(mach_small).weights
+            )
+            entropy_large = EntropicLearning.entropy(
+                MLJModelInterface.fitted_params(mach_large).weights
+            )
 
             @test entropy_small < entropy_large
         end
@@ -327,7 +335,9 @@ end
 
     @testset "Outlier detection capability" begin
         # Create clean data
-        X_clean, y_clean = make_blobs(80, D_features; centers=K_clusters, cluster_std=0.5, rng=123, as_table=false)
+        X_clean, y_clean = make_blobs(
+            80, D_features; centers=K_clusters, cluster_std=0.5, rng=123, as_table=false
+        )
 
         # Add obvious outliers
         X_outliers = randn(20, D_features) * 5  # Large values, far from clusters

@@ -116,12 +116,7 @@ function create_model(;
     epsC::Float64=1e-3,
     epsW::Float64=1e-1,
 )
-    return eSPAClassifier(;
-        K=K_clusters,
-        epsC=epsC,
-        epsW=epsW,
-        random_state=rng,
-    )
+    return eSPAClassifier(; K=K_clusters, epsC=epsC, epsW=epsW, random_state=rng)
 end
 
 # Function to create test data in MLJ format
@@ -441,7 +436,15 @@ function benchmark_update_C!(D::Int, T::Int, N_runs::Int=10)
     weights = fill(1.0 / T, T)
 
     return benchmark_function_with_memory(
-        "update_C!", (C, X, G, weights) -> update_C!(C, X, G, weights), D, T, C, X, G, weights; N_runs=N_runs
+        "update_C!",
+        (C, X, G, weights) -> update_C!(C, X, G, weights),
+        D,
+        T,
+        C,
+        X,
+        G,
+        weights;
+        N_runs=N_runs,
     )
 end
 
@@ -461,7 +464,8 @@ function benchmark_calc_loss(D::Int, T::Int, N_runs::Int=10)
 
     return benchmark_function_with_memory(
         "calc_loss",
-        (X, P, C, W, L, G, epsC, epsW, weights) -> calc_loss(X, P, C, W, L, G, epsC, epsW, weights),
+        (X, P, C, W, L, G, epsC, epsW, weights) ->
+            calc_loss(X, P, C, W, L, G, epsC, epsW, weights),
         D,
         T,
         X,

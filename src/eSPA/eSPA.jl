@@ -97,9 +97,7 @@ function MMI.fit(
         features=column_names,
     )
     cache = (
-        report...,
-        dimensions=(D_features, T_instances, M_classes, K_current),
-        precision=Tf,
+        report..., dimensions=(D_features, T_instances, M_classes, K_current), precision=Tf
     )
 
     return (fitresult, cache, report)
@@ -152,9 +150,7 @@ function MMI.update(
         features=old_cache.features,
     )
     cache = (
-        report...,
-        dimensions=(D_features, T_instances, M_classes, K_current),
-        precision=Tf,
+        report..., dimensions=(D_features, T_instances, M_classes, K_current), precision=Tf
     )
     return (fitresult, cache, report)
 end

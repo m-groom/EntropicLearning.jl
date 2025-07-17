@@ -90,7 +90,9 @@ end
 function eos_loss end
 
 # Default implementation of eos_loss
-function eos_loss(model, distances::AbstractVector, weights::AbstractVector, fitresult, args...)
+function eos_loss(
+    model, distances::AbstractVector, weights::AbstractVector, fitresult, args...
+)
     return dot(weights, distances)
 end
 
@@ -344,7 +346,9 @@ function eos_outlier_scores(
     kwargs...,
 )
     # Find the appropriate weights and alpha by calling the corresponding eos_weights function.
-    result = calculate_eos_weights(model, fitresult, alpha_range, target_Deff, args...; kwargs...)
+    result = calculate_eos_weights(
+        model, fitresult, alpha_range, target_Deff, args...; kwargs...
+    )
 
     # Calculate outlier scores and return with the found alpha.
     return (scores=outlier_scores(result.weights), alpha=result.alpha)

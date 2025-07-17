@@ -5,7 +5,7 @@ _columnnames(X) = collect(_columnnames(X, Val(Tables.columnaccess(X))))
 _columnnames(X, ::Val{true}) = Tables.columnnames(Tables.columns(X))
 _columnnames(X, ::Val{false}) = Tables.columnnames(first(Tables.rows(X)))
 # Column names for matrix input
-function _columnnames(X::AbstractMatrix{Tf}) where Tf <: AbstractFloat
+function _columnnames(X::AbstractMatrix{Tf}) where {Tf<:AbstractFloat}
     return [Symbol("feature_$i") for i in axes(X, 1)]
 end
 
@@ -35,7 +35,14 @@ end
 
 # Select rows - with weights
 function MMI.selectrows(::eSPAClassifier, I, X_mat, Pi_mat, y_int, column_names, classes, w)
-    return (view(X_mat, :, I), view(Pi_mat, :, I), view(y_int, I), column_names, classes, view(w, I))
+    return (
+        view(X_mat, :, I),
+        view(Pi_mat, :, I),
+        view(y_int, I),
+        column_names,
+        classes,
+        view(w, I),
+    )
 end
 
 # Reformat - predict
@@ -51,7 +58,7 @@ end
 # Helper function to check and format weights
 function format_weights(w, y::AbstractVector{<:Integer}, Tf::Type{<:AbstractFloat}=Float64)
     w isa AbstractVector{<:Real} || throw(
-        ArgumentError("Expected `weights === nothing` or `weights::AbstractVector{<:Real}")
+        ArgumentError("Expected `weights === nothing` or `weights::AbstractVector{<:Real}"),
     )
     length(y) == length(w) || throw(
         ArgumentError("weights passed must have the same length as the target vector.")

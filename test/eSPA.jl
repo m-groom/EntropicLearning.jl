@@ -477,9 +477,11 @@ end
             @test size(Pi_mat) == (3, 5)
 
             # Test one-hot encoding
-            expected = [1.0 0.0 0.0 1.0 0.0;
-                       0.0 1.0 0.0 0.0 1.0;
-                       0.0 0.0 1.0 0.0 0.0]
+            expected = [
+                1.0 0.0 0.0 1.0 0.0;
+                0.0 1.0 0.0 0.0 1.0;
+                0.0 0.0 1.0 0.0 0.0
+            ]
             @test Pi_mat ≈ expected
 
             # Test column sums are 1
@@ -550,7 +552,7 @@ end
             formatted = eSPA.format_weights(w_int, y, Float32)
 
             @test eltype(formatted) == Float32
-            @test formatted ≈ Float32[1/6, 2/6, 3/6]
+            @test formatted ≈ Float32[1 / 6, 2 / 6, 3 / 6]
         end
 
         @testset "edge cases" begin
@@ -628,9 +630,7 @@ end
                 K=3, mi_init=mi_init, kpp_init=kpp_init, random_state=42
             )
 
-            C, W, L, G = eSPA.initialise(
-                model, X_transposed, P, y_int
-            )
+            C, W, L, G = eSPA.initialise(model, X_transposed, P, y_int)
 
             # Test dimensions
             @test size(C) == (D_features, 3)
@@ -653,9 +653,7 @@ end
 
         # Test edge case: K=1
         model_k1 = eSPAClassifier(; K=1, random_state=42)
-        C, W, L, G = eSPA.initialise(
-            model_k1, X_transposed, P, y_int
-        )
+        C, W, L, G = eSPA.initialise(model_k1, X_transposed, P, y_int)
         @test size(C) == (D_features, 1)
         @test all(G.rowval .== 1)  # All points assigned to cluster 1
 
@@ -663,12 +661,8 @@ end
         model1 = eSPAClassifier(; K=3, random_state=42)
         model2 = eSPAClassifier(; K=3, random_state=42)
 
-        C1, W1, L1, G1 = eSPA.initialise(
-            model1, X_transposed, P, y_int
-        )
-        C2, W2, L2, G2 = eSPA.initialise(
-            model2, X_transposed, P, y_int
-        )
+        C1, W1, L1, G1 = eSPA.initialise(model1, X_transposed, P, y_int)
+        C2, W2, L2, G2 = eSPA.initialise(model2, X_transposed, P, y_int)
 
         @test C1 ≈ C2
         @test W1 ≈ W2
@@ -679,9 +673,7 @@ end
     @testset "2. Core Update Functions" begin
         # Setup for update function tests
         model = eSPAClassifier(; K=K_clusters, epsC=1e-3, epsW=1e-1, random_state=101)
-        C, W, L, G = eSPA.initialise(
-            model, X_transposed, P, y_int
-        )
+        C, W, L, G = eSPA.initialise(model, X_transposed, P, y_int)
 
         @testset "update_G! tests" begin
             G_orig = copy(G)
@@ -697,12 +689,16 @@ end
             @test nnz(G) == T_instances
 
             # Test that loss doesn't increase
-            loss_after = eSPA.calc_loss(X_transposed, P, C, W, L, G, model.epsC, model.epsW, weights)
+            loss_after = eSPA.calc_loss(
+                X_transposed, P, C, W, L, G, model.epsC, model.epsW, weights
+            )
             @test loss_after <= loss_before + 1e-10
 
             # Test with epsC = 0.0
             G_zero = copy(G_orig)
-            loss_before = eSPA.calc_loss(X_transposed, P, C, W, L, G_zero, 0.0, model.epsW, weights)
+            loss_before = eSPA.calc_loss(
+                X_transposed, P, C, W, L, G_zero, 0.0, model.epsW, weights
+            )
 
             eSPA.update_G!(G_zero, X_transposed, P, C, W, L, 0.0, weights)
 
@@ -710,7 +706,9 @@ end
             @test size(G_zero) == (K_clusters, T_instances)
             @test nnz(G_zero) == T_instances
 
-            loss_after = eSPA.calc_loss(X_transposed, P, C, W, L, G_zero, 0.0, model.epsW, weights)
+            loss_after = eSPA.calc_loss(
+                X_transposed, P, C, W, L, G_zero, 0.0, model.epsW, weights
+            )
             @test loss_after <= loss_before + 1e-10
         end
 
@@ -727,12 +725,16 @@ end
             @test sum(W) ≈ 1.0 atol = 1e-10
 
             # Test that loss doesn't increase
-            loss_after = eSPA.calc_loss(X_transposed, P, C, W, L, G, model.epsC, model.epsW, weights)
+            loss_after = eSPA.calc_loss(
+                X_transposed, P, C, W, L, G, model.epsC, model.epsW, weights
+            )
             @test loss_after <= loss_before + 1e-10
 
             # Test with epsW = Inf
             W_inf = fill(1.0 / D_features, D_features)
-            loss_before = eSPA.calc_loss(X_transposed, P, C, W_inf, L, G, model.epsC, Inf, weights)
+            loss_before = eSPA.calc_loss(
+                X_transposed, P, C, W_inf, L, G, model.epsC, Inf, weights
+            )
 
             eSPA.update_W!(W_inf, X_transposed, C, G, Inf, weights)
 
@@ -740,7 +742,9 @@ end
             @test sum(W_inf) ≈ 1.0 atol = 1e-10
             @test all(W_inf .≈ 1.0 / D_features)
 
-            loss_after = eSPA.calc_loss(X_transposed, P, C, W_inf, L, G, model.epsC, Inf, weights)
+            loss_after = eSPA.calc_loss(
+                X_transposed, P, C, W_inf, L, G, model.epsC, Inf, weights
+            )
             @test loss_after <= loss_before + 1e-10
         end
 
@@ -756,7 +760,9 @@ end
             @test size(C) == (D_features, K_clusters)
 
             # Test that loss doesn't increase
-            loss_after = eSPA.calc_loss(X_transposed, P, C, W, L, G, model.epsC, model.epsW, weights)
+            loss_after = eSPA.calc_loss(
+                X_transposed, P, C, W, L, G, model.epsC, model.epsW, weights
+            )
             @test loss_after <= loss_before + 1e-10
         end
 
@@ -774,7 +780,9 @@ end
             @test size(L) == (M_classes, K_clusters)
 
             # Test that loss doesn't increase
-            loss_after = eSPA.calc_loss(X_transposed, P, C, W, L, G, model.epsC, model.epsW, weights)
+            loss_after = eSPA.calc_loss(
+                X_transposed, P, C, W, L, G, model.epsC, model.epsW, weights
+            )
             @test loss_after <= loss_before + 1e-10
         end
 
@@ -791,18 +799,20 @@ end
 
     @testset "3. Loss and Convergence Functions" begin
         model = eSPAClassifier(; K=K_clusters, epsC=1e-3, epsW=1e-1, random_state=123)
-        C, W, L, G = eSPA.initialise(
-            model, X_transposed, P, y_int
-        )
+        C, W, L, G = eSPA.initialise(model, X_transposed, P, y_int)
 
         @testset "calc_loss tests" begin
-            loss = eSPA.calc_loss(X_transposed, P, C, W, L, G, model.epsC, model.epsW, weights)
+            loss = eSPA.calc_loss(
+                X_transposed, P, C, W, L, G, model.epsC, model.epsW, weights
+            )
 
             @test isfinite(loss)
             @test isa(loss, Float64)
 
             # Test with different regularisation parameters
-            loss_zero = eSPA.calc_loss(X_transposed, P, C, W, L, G, 0.0, model.epsW, weights)
+            loss_zero = eSPA.calc_loss(
+                X_transposed, P, C, W, L, G, 0.0, model.epsW, weights
+            )
             @test isfinite(loss_zero)
             @test isa(loss_zero, Float64)
 
@@ -901,15 +911,11 @@ end
             @test all(P_test .>= 0)
 
             # Test reproducibility
-            model_repro = eSPAClassifier(;
-                K=K_clusters, random_state=123
-            )
+            model_repro = eSPAClassifier(; K=K_clusters, random_state=123)
             P1, _ = eSPA._predict(
                 model_repro, fitresult.C, fitresult.W, fitresult.L, X_test
             )
-            model_repro2 = eSPAClassifier(;
-                K=K_clusters, random_state=123
-            )
+            model_repro2 = eSPAClassifier(; K=K_clusters, random_state=123)
             P2, _ = eSPA._predict(
                 model_repro2, fitresult.C, fitresult.W, fitresult.L, X_test
             )
@@ -1036,11 +1042,7 @@ end
         @testset "Reproducible affiliations" begin
             # Test unbiasing
             _, G_unbias = eSPA._predict(
-                model,
-                fitresult.C,
-                fitresult.W,
-                fitresult.L,
-                X_transposed,
+                model, fitresult.C, fitresult.W, fitresult.L, X_transposed
             )
             @test G_unbias == fitresult.G
         end
@@ -1108,7 +1110,6 @@ end
                 @test isa(pair.second, Float64)
                 @test 0.0 <= pair.second <= 1.0
             end
-
         end
     end
 
@@ -1116,9 +1117,7 @@ end
 
         # Setup for weighted update function tests
         model = eSPAClassifier(; K=K_clusters, epsC=1e-3, epsW=1e-1, random_state=101)
-        C, W, L, G = eSPA.initialise(
-            model, X_transposed, P, y_int
-        )
+        C, W, L, G = eSPA.initialise(model, X_transposed, P, y_int)
 
         @testset "update_G! with random weights" begin
             G_orig = copy(G)
@@ -1134,12 +1133,16 @@ end
             @test nnz(G) == T_instances
 
             # Test that loss doesn't increase
-            loss_after = eSPA.calc_loss(X_transposed, P, C, W, L, G, model.epsC, model.epsW, weights_random)
+            loss_after = eSPA.calc_loss(
+                X_transposed, P, C, W, L, G, model.epsC, model.epsW, weights_random
+            )
             @test loss_after <= loss_before + 1e-10
 
             # Test with epsC = 0.0
             G_zero = copy(G_orig)
-            loss_before = eSPA.calc_loss(X_transposed, P, C, W, L, G_zero, 0.0, model.epsW, weights_random)
+            loss_before = eSPA.calc_loss(
+                X_transposed, P, C, W, L, G_zero, 0.0, model.epsW, weights_random
+            )
 
             eSPA.update_G!(G_zero, X_transposed, P, C, W, L, 0.0, weights_random)
 
@@ -1147,7 +1150,9 @@ end
             @test size(G_zero) == (K_clusters, T_instances)
             @test nnz(G_zero) == T_instances
 
-            loss_after = eSPA.calc_loss(X_transposed, P, C, W, L, G_zero, 0.0, model.epsW, weights_random)
+            loss_after = eSPA.calc_loss(
+                X_transposed, P, C, W, L, G_zero, 0.0, model.epsW, weights_random
+            )
             @test loss_after <= loss_before + 1e-10
         end
 
@@ -1164,12 +1169,16 @@ end
             @test sum(W) ≈ 1.0 atol = 1e-10
 
             # Test that loss doesn't increase
-            loss_after = eSPA.calc_loss(X_transposed, P, C, W, L, G, model.epsC, model.epsW, weights_random)
+            loss_after = eSPA.calc_loss(
+                X_transposed, P, C, W, L, G, model.epsC, model.epsW, weights_random
+            )
             @test loss_after <= loss_before + 1e-10
 
             # Test with epsW = Inf
             W_inf = fill(1.0 / D_features, D_features)
-            loss_before = eSPA.calc_loss(X_transposed, P, C, W_inf, L, G, model.epsC, Inf, weights_random)
+            loss_before = eSPA.calc_loss(
+                X_transposed, P, C, W_inf, L, G, model.epsC, Inf, weights_random
+            )
 
             eSPA.update_W!(W_inf, X_transposed, C, G, Inf, weights_random)
 
@@ -1177,7 +1186,9 @@ end
             @test sum(W_inf) ≈ 1.0 atol = 1e-10
             @test all(W_inf .≈ 1.0 / D_features)
 
-            loss_after = eSPA.calc_loss(X_transposed, P, C, W_inf, L, G, model.epsC, Inf, weights_random)
+            loss_after = eSPA.calc_loss(
+                X_transposed, P, C, W_inf, L, G, model.epsC, Inf, weights_random
+            )
             @test loss_after <= loss_before + 1e-10
         end
 
@@ -1193,7 +1204,9 @@ end
             @test size(C) == (D_features, K_clusters)
 
             # Test that loss doesn't increase
-            loss_after = eSPA.calc_loss(X_transposed, P, C, W, L, G, model.epsC, model.epsW, weights_random)
+            loss_after = eSPA.calc_loss(
+                X_transposed, P, C, W, L, G, model.epsC, model.epsW, weights_random
+            )
             @test loss_after <= loss_before + 1e-10
 
             # Test with zero-weight clusters (edge case)
@@ -1208,17 +1221,23 @@ end
         end
 
         @testset "calc_loss with random weights" begin
-            loss_random = eSPA.calc_loss(X_transposed, P, C, W, L, G, model.epsC, model.epsW, weights_random)
+            loss_random = eSPA.calc_loss(
+                X_transposed, P, C, W, L, G, model.epsC, model.epsW, weights_random
+            )
 
             @test isfinite(loss_random)
             @test isa(loss_random, Float64)
 
             # Test with different regularisation parameters
-            loss_zero = eSPA.calc_loss(X_transposed, P, C, W, L, G, 0.0, model.epsW, weights_random)
+            loss_zero = eSPA.calc_loss(
+                X_transposed, P, C, W, L, G, 0.0, model.epsW, weights_random
+            )
             @test isfinite(loss_zero)
             @test isa(loss_zero, Float64)
 
-            loss_inf = eSPA.calc_loss(X_transposed, P, C, W, L, G, model.epsC, Inf, weights_random)
+            loss_inf = eSPA.calc_loss(
+                X_transposed, P, C, W, L, G, model.epsC, Inf, weights_random
+            )
             @test isfinite(loss_inf)
             @test isa(loss_inf, Float64)
         end
@@ -1280,9 +1299,7 @@ end
     @testset "12. Update Method Tests" begin
         @testset "update equivalence to fit" begin
             # Create test data
-            X_table, y_cat = MLJBase.make_blobs(
-                150, 4; centers=3, rng=456, as_table=true
-            )
+            X_table, y_cat = MLJBase.make_blobs(150, 4; centers=3, rng=456, as_table=true)
 
             # First, train a model to full convergence to get the baseline
             model_full = eSPAClassifier(;
@@ -1346,9 +1363,7 @@ end
 
         @testset "update with weights" begin
             # Test update method with sample weights
-            X_table, y_cat = MLJBase.make_blobs(
-                100, 3; centers=2, rng=789, as_table=true
-            )
+            X_table, y_cat = MLJBase.make_blobs(100, 3; centers=2, rng=789, as_table=true)
             weights = rand(Random.MersenneTwister(789), 100)
             weights ./= sum(weights)
 
@@ -1385,9 +1400,7 @@ end
 
         @testset "update preserves cache and report structure" begin
             # Test that update properly accumulates timings and loss history
-            X_table, y_cat = MLJBase.make_blobs(
-                80, 2; centers=2, rng=101, as_table=true
-            )
+            X_table, y_cat = MLJBase.make_blobs(80, 2; centers=2, rng=101, as_table=true)
 
             # Train partially
             model = eSPAClassifier(;
@@ -1416,7 +1429,7 @@ end
 
             # Test that loss is monotonically decreasing
             for i in 2:length(report2.loss)
-                @test report2.loss[i] <= report2.loss[i-1] + 1e-10
+                @test report2.loss[i] <= report2.loss[i - 1] + 1e-10
             end
 
             # Test that timings are preserved and updated
@@ -1426,9 +1439,7 @@ end
 
         @testset "update with different hyperparameters" begin
             # Test that update works when only changing max_iter
-            X_table, y_cat = MLJBase.make_blobs(
-                60, 2; centers=2, rng=202, as_table=true
-            )
+            X_table, y_cat = MLJBase.make_blobs(60, 2; centers=2, rng=202, as_table=true)
 
             model = eSPAClassifier(;
                 K=2, epsC=1e-3, epsW=1e-1, max_iter=3, tol=1e-8, random_state=202
@@ -1461,9 +1472,7 @@ end
 
         @testset "update convergence behavior" begin
             # Test that update respects convergence tolerance
-            X_table, y_cat = MLJBase.make_blobs(
-                50, 2; centers=2, rng=303, as_table=true
-            )
+            X_table, y_cat = MLJBase.make_blobs(50, 2; centers=2, rng=303, as_table=true)
 
             model = eSPAClassifier(;
                 K=2, epsC=1e-3, epsW=1e-1, max_iter=5, tol=1e-6, random_state=303
@@ -1486,7 +1495,9 @@ end
             loss_history = MLJBase.report(mach).loss
             if length(loss_history) > 1
                 # Check if the last few iterations show convergence
-                last_improvement = abs(loss_history[end] - loss_history[end-1]) / abs(loss_history[end-1])
+                last_improvement =
+                    abs(loss_history[end] - loss_history[end - 1]) /
+                    abs(loss_history[end - 1])
                 if last_improvement <= model.tol
                     @test true  # Properly converged
                 else

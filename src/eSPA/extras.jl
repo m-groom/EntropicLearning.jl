@@ -409,7 +409,7 @@ function EntropicLearning.eos_distances(::eSPAClassifier, fitresult, X)
     K_clusters = size(C, 2)
     M_classes = size(L, 1)
 
-     # Calculate Γ
+    # Calculate Γ
     G = sparse(
         rand(1:K_clusters, T_instances),
         1:T_instances,
@@ -440,8 +440,24 @@ function EntropicLearning.eos_distances(::eSPAClassifier, fitresult, X)
 end
 
 # Implementation of EntropicLearning.eos_loss for eSPAClassifier
-function EntropicLearning.eos_loss(model::eSPAClassifier, distances::AbstractVector, weights::AbstractVector, fitresult, X, P, args...)
+function EntropicLearning.eos_loss(
+    model::eSPAClassifier,
+    distances::AbstractVector,
+    weights::AbstractVector,
+    fitresult,
+    X,
+    P,
+    args...,
+)
     return calc_loss(
-        X, P, fitresult.C, fitresult.W, fitresult.L, fitresult.G, model.epsC, model.epsW, weights
+        X,
+        P,
+        fitresult.C,
+        fitresult.W,
+        fitresult.L,
+        fitresult.G,
+        model.epsC,
+        model.epsW,
+        weights,
     )
 end

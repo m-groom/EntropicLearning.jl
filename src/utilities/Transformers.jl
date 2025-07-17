@@ -50,7 +50,8 @@ end
 
 function _build_named_tuple(column_names, column_vectors)
     # Convert to symbols if needed (handles both Symbol and String column names)
-    sym_names = column_names isa AbstractVector{Symbol} ? column_names : Symbol.(column_names)
+    sym_names =
+        column_names isa AbstractVector{Symbol} ? column_names : Symbol.(column_names)
     return NamedTuple{Tuple(sym_names)}(Tuple(column_vectors))
 end
 
@@ -316,9 +317,13 @@ function MMI.transform(transformer::QuantileTransformer, fitresult, Xnew)
         new_col = if n_quantiles == 0
             _process_empty_quantiles(col_vector, min_range, max_range, T)
         elseif n_quantiles == 1
-            _process_single_quantile(col_vector, current_quantiles[1], min_range, max_range, range_span, T)
+            _process_single_quantile(
+                col_vector, current_quantiles[1], min_range, max_range, range_span, T
+            )
         else
-            _process_multiple_quantiles(col_vector, current_quantiles, min_range, max_range, range_span, T)
+            _process_multiple_quantiles(
+                col_vector, current_quantiles, min_range, max_range, range_span, T
+            )
         end
 
         transformed_cols[col_idx] = new_col
@@ -429,7 +434,9 @@ function _process_empty_quantiles(col_vector, min_range, max_range, T::Type)
     return new_col
 end
 
-function _process_single_quantile(col_vector, quantile_value, min_range, max_range, range_span, T::Type)
+function _process_single_quantile(
+    col_vector, quantile_value, min_range, max_range, range_span, T::Type
+)
     new_col = similar(col_vector, T)
     q_val = quantile_value
     @inbounds for i in eachindex(col_vector)
@@ -466,7 +473,9 @@ function _interpolate_quantile_value(val, quantiles, inv_n_quantiles_minus_1, T:
     end
 end
 
-function _process_multiple_quantiles(col_vector, quantiles, min_range, max_range, range_span, T::Type)
+function _process_multiple_quantiles(
+    col_vector, quantiles, min_range, max_range, range_span, T::Type
+)
     new_col = similar(col_vector, T)
     q_min = quantiles[1]
     q_max = quantiles[end]

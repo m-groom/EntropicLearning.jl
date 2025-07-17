@@ -90,7 +90,13 @@ function update_G!(
         # Compute the classification error term
         logLP = Matrix{Tf}(undef, K_clusters, T_instances)  # logLP = ε_C × log.(Λ)' × Π
         LinearAlgebra.BLAS.gemm!(
-            'T', 'N', Tf(epsC / T_instances), EntropicLearning.safelog(L; tol=eps(Tf)), P, Tf(0.0), logLP
+            'T',
+            'N',
+            Tf(epsC / T_instances),
+            EntropicLearning.safelog(L; tol=eps(Tf)),
+            P,
+            Tf(0.0),
+            logLP,
         )
 
         # Subtract the classification error term from the discretisation error term
@@ -163,7 +169,10 @@ end
 
 # Update step for the centroid matrix C
 function update_C!(
-    C::AbstractMatrix{Tf}, X::AbstractMatrix{Tf}, G::SparseMatrixCSC{Bool,Int}, weights::AbstractVector{Tf}
+    C::AbstractMatrix{Tf},
+    X::AbstractMatrix{Tf},
+    G::SparseMatrixCSC{Bool,Int},
+    weights::AbstractVector{Tf},
 ) where {Tf<:AbstractFloat}
     # Get dimensions
     D_features, T_instances = size(X)
@@ -234,7 +243,8 @@ function calc_loss(
 
     # Calculate the classification error
     @inbounds LG = view(L, :, G.rowval)   # LG = Λ × Γ
-    class_error = Tf(epsC / T_instances) * EntropicLearning.cross_entropy(P, LG; tol=eps(Tf))
+    class_error =
+        Tf(epsC / T_instances) * EntropicLearning.cross_entropy(P, LG; tol=eps(Tf))
 
     # Calculate the entropy term
     if isfinite(epsW)
@@ -244,7 +254,7 @@ function calc_loss(
     end
 
     # Calculate the loss
-    return disc_error + class_error  - entr_W
+    return disc_error + class_error - entr_W
 end
 
 # Fit function
@@ -326,7 +336,6 @@ function _fit!(
     # Return the loss, number of iterations and the timer output
     return loss[2:(iter + 1)], iter, to
 end
-
 
 # Function to check for convergence
 function converged(
