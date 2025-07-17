@@ -39,46 +39,7 @@ mutable struct UnsupervisedEOSWrapper{M} <: MMI.Unsupervised
     atol::Float64
 end
 
-# TODO: make MLJ-compliant docstring
-"""
-    EOSWrapper{M}
-
-Entropic Outlier Sparsification (EOS) wrapper for MLJ models.
-
-This meta-algorithm wraps any MLJ model that supports sample weights and provides
-outlier detection capabilities through entropic regularisation of the sample weights.
-
-# Parameters
-- `model::M`: The wrapped MLJ model (must support sample weights)
-- `alpha::Float64`: Entropic regularisation parameter (>0). Larger values lead to more uniform weights.
-- `tol::Float64`: Convergence tolerance for the iterative algorithm
-- `max_iter::Int`: Maximum number of iterations
-
-# Example
-```julia
-# Wrap a classifier with EOS
-using MLJ, EntropicLearning
-
-# Load a model that supports weights
-Tree = @load DecisionTreeClassifier pkg=DecisionTree
-
-# Create EOS-wrapped model
-eos_model = EOSWrapper(Tree(), alpha=1.0)
-
-# Train as usual
-mach = machine(eos_model, X, y) |> fit!
-
-# Get predictions
-ŷ = predict(mach, Xnew)
-
-# Get outlier scores
-outlier_scores = transform(mach, Xnew)
-```
-
-# References
-Horenko, I. (2022). "Cheap robust learning of data anomalies with analytically
-solvable entropic outlier sparsification." PNAS 119(9), e2119659119.
-"""
+# Union type for all EOSWrapper types
 const EOSWrapper{M} = Union{
     DeterministicEOSWrapper{M},ProbabilisticEOSWrapper{M},UnsupervisedEOSWrapper{M}
 } where {M}
@@ -181,6 +142,16 @@ struct EOSFitResult{F,T<:AbstractFloat}
     inner_fitresult::F
     distances::AbstractVector{T}
     ESS::T
+    # Inner constructor to ensure ESS is normalised (i.e. between 1/T and 1)
+    function EOSFitResult(inner_fitresult, distances, ESS)
+        T_train = length(distances)
+        if ESS > 1
+            ESS /= T_train
+        elseif ESS < 1/T_train
+            ESS = 1/T_train
+        end
+        new{typeof(inner_fitresult),typeof(ESS)}(inner_fitresult, distances, ESS)
+    end
 end
 
 # ==============================================================================
@@ -188,7 +159,7 @@ end
 # ==============================================================================
 
 include("frontend.jl")  # Data front-end
-
+include("core.jl")
 
 # Common implementation - TODO: separate into fit and update methods
 function MMI.fit(eos::EOSWrapper, verbosity::Int, args, T_instances::Int, Tf::Type)
@@ -295,11 +266,6 @@ function MMI.fit(eos::EOSWrapper, verbosity::Int, args, T_instances::Int, Tf::Ty
     return (fitresult, cache, report)
 end
 
-# Helper function to get the loss from the inner model - TODO: add documentation in case users need to override this
-function eos_loss(model, distances::AbstractVector, weights::AbstractVector, fitresult, args...)
-    return dot(weights, distances)
-end
-
 # ==============================================================================
 # Transform and Predict Methods
 # ==============================================================================
@@ -366,5 +332,121 @@ end
 function MMI.training_losses(::EOSWrapper, report)
     return report.loss
 end
+
+# ==============================================================================
+# Documentation
+# ==============================================================================
+
+"""
+$(MMI.doc_header(eSPAClassifier))
+
+Entropic Outlier Sparsification (EOS) wrapper for MLJ models.
+
+This meta-algorithm wraps any MLJ model that supports sample weights and provides
+outlier detection capabilities through entropic regularisation of the sample weights.
+
+# Training data
+
+In MLJ or MLJBase, bind an instance `eos` to data with
+
+    mach = machine(eos, X, y)
+
+where
+
+- `X`: any table of input features (e.g., a `DataFrame`) whose columns
+  each have a scitype compatible with the wrapped model `eos.model`; check column scitypes with `schema(X)` and model-compatible scitypes with `input_scitype(eos.model)`
+
+- `y`: the target, which can be any `AbstractVector` whose element
+  scitype is compatible with the wrapped model `eos.model`; check the scitype
+  with `scitype(y)` and model-compatible scitypes with `target_scitype(eos.model)`
+
+Train the machine with `fit!(mach, rows=...)`.
+
+
+# Hyperparameters
+
+- `model::M`: The wrapped MLJ model (must support sample weights)
+
+- `alpha::Float64 = 1.0`: Entropic regularisation parameter (>0). Larger values lead to more uniform weights.
+
+- `tol::Float64 = 1e-8`: Convergence tolerance for the iterative algorithm
+
+- `max_iter::Int = 100`: Maximum number of iterations
+
+- `atol::Float64 = 1e-6`: Absolute tolerance for root finding during predict/transform operations
+
+# Operations
+
+- `transform(mach, Xnew)`: return outlier scores for the new data `Xnew` having the same scitype as `X` above.
+
+- `predict(mach, Xnew)`: return predictions of the target from the wrapped modelgiven
+  features `Xnew` having the same scitype as `X` above.
+
+# Fitted parameters
+
+The fields of `fitted_params(mach)` are:
+
+- `weights`: The learned sample weights
+
+- `inner_params`: The fitted parameters of the wrapped model
+
+
+# Report
+
+The fields of `report(mach)` are:
+
+- `iterations`: Number of iterations taken by the algorithm
+
+- `loss`: Loss function values at each iteration
+
+- `timings`: Timings for each step of the algorithm
+
+- `ESS`: Effective sample size of the weights
+
+- `inner_report`: The report of the wrapped model
+
+
+# Examples
+
+```
+using MLJ
+
+# Load example dataset
+X, y = @load_iris
+
+# Create eSPA classifier
+eSPA = @load eSPAClassifier pkg=EntropicLearning
+model = eSPA(K=3, epsC=1e-3, epsW=1e-1, random_state=101)
+
+# Wrap the model with EOS
+EOS = @load EOSWrapper pkg=EntropicLearning
+eos = EOS(model=model, alpha=0.1)
+mach = machine(eos, X, y)
+fit!(mach)
+
+# Make predictions
+Xnew = (sepal_length = [6.4, 7.2, 7.4],
+        sepal_width = [2.8, 3.0, 2.8],
+        petal_length = [5.6, 5.8, 6.1],
+        petal_width = [2.1, 1.6, 1.9])
+
+yhat = predict(mach, Xnew)     # probabilistic predictions
+predict_mode(mach, Xnew)       # point predictions
+pdf.(yhat, "virginica")        # probabilities for "virginica" class
+
+# Get outlier scores for the new data
+scores = transform(mach, Xnew)
+
+# Access fitted parameters
+fp = fitted_params(mach)
+fp.weights                     # learned sample weights for the training data
+fp.inner_params                # fitted parameters of the wrapped model
+```
+
+See also the original references:
+- [Horenko 2022](https://doi.org/10.1073/pnas.2119659119)
+
+"""
+EOSWrapper
 
 end # module EOS
