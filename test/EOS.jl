@@ -5,6 +5,10 @@ using Random
 using Statistics
 using LinearAlgebra
 using MLJModelInterface
+using TimerOutputs
+
+# Access EOS module
+import EntropicLearning.EOS as EOS
 
 # Test data helper function
 function create_test_distances(n=10; outlier_ratio=0.1)
@@ -369,5 +373,257 @@ end
 
         dummy_model = DummyUnsupportedModel()
         @test_throws ArgumentError EOSWrapper(dummy_model)
+    end
+end
+
+@testset "1. EOS Core Algorithm Tests" begin
+    # Test data generation
+    D_features = 3
+    T_instances = 50  # Smaller for faster tests
+    K_clusters = 3
+    X_table, y_cat = MLJBase.make_blobs(
+        T_instances, D_features; centers=K_clusters, cluster_std=1.0, rng=123, as_table=true
+    )
+
+    # Create inner model and EOS wrapper
+    inner_model = eSPAClassifier(K=K_clusters, epsC=1e-2, epsW=1e-1, random_state=101, max_iter=1)
+    eos_model = EOSWrapper(inner_model; alpha=1.0, max_iter=10, tol=1e-6)
+
+    @testset "initialise function tests" begin
+        @testset "Basic functionality" begin
+            # Get arguments in the format expected by initialise
+            args = MLJModelInterface.reformat(eos_model, X_table, y_cat)
+            T_instances_test = args[2]
+            Tf = args[3]
+
+            weights, distances, loss, inner_fitresult, inner_cache, inner_report = EOS.initialise(
+                eos_model, 0, args[1], T_instances_test, Tf
+            )
+
+            # Test weights properties
+            @test length(weights) == T_instances_test
+            @test all(weights .>= 0)
+            @test isapprox(sum(weights), 1.0, atol=1e-10)
+            @test eltype(weights) == Tf
+
+            # Test distances properties
+            @test length(distances) == T_instances_test
+            @test all(distances .>= 0)
+            @test eltype(distances) == Tf
+
+            # Test loss array properties
+            @test length(loss) == eos_model.max_iter + 1
+            @test isfinite(loss[1])
+            @test all(loss[2:end] .== Tf(Inf))  # Only first element should be set
+
+            # Test that inner model was fitted
+            @test inner_fitresult !== nothing
+            @test inner_cache !== nothing
+            @test inner_report !== nothing
+        end
+
+        @testset "Edge cases" begin
+            # Test with single instance
+            X_single, y_single = make_blobs(1, D_features; centers=1, rng=456, as_table=true)
+            eos_model_single = EOSWrapper(eSPAClassifier(K=1); alpha=1.0, max_iter=10, tol=1e-6)
+            args_single = MLJModelInterface.reformat(eos_model_single, X_single, y_single)
+            T_single = args_single[2]
+            Tf = args_single[3]
+
+            weights, distances, loss, _, _, _ = EOS.initialise(
+                eos_model_single, 0, args_single[1], T_single, Tf
+            )
+
+            @test length(weights) == 1
+            @test weights[1] ≈ 1.0 atol=1e-10
+            @test length(distances) == 1
+            @test distances[1] >= 0
+        end
+    end
+
+    @testset "_fit! function tests" begin
+        @testset "Basic iterative optimization" begin
+            # Setup initial state
+            args = MLJModelInterface.reformat(eos_model, X_table, y_cat)
+            T_instances_test = args[2]
+            Tf = args[3]
+
+            weights, distances, loss, inner_fitresult, inner_cache, inner_report = EOS.initialise(
+                eos_model, 0, args[1], T_instances_test, Tf
+            )
+
+            # Create timer output
+            to = TimerOutput()
+
+            # Run _fit!
+            final_inner_fitresult, final_inner_cache, final_inner_report, iterations, final_to = EOS._fit!(
+                weights, distances, loss, inner_fitresult, inner_cache, inner_report,
+                eos_model, 0, args[1], to
+            )
+
+            # Test that function completed
+            @test iterations >= 1
+            @test iterations <= eos_model.max_iter
+            @test final_inner_fitresult !== nothing
+            @test final_inner_cache !== nothing
+            @test final_inner_report !== nothing
+            @test final_to isa TimerOutput
+
+            # Test that weights remain valid
+            @test all(weights .>= 0)
+            @test isapprox(sum(weights), 1.0, atol=1e-10)
+
+            # Test that distances remain valid
+            @test all(distances .>= 0)
+            @test length(distances) == T_instances_test
+
+            # Test loss array was updated
+            @test isfinite(loss[1])
+            @test all(isfinite.(loss[1:(iterations + 1)]))
+            @test all(loss[(iterations + 2):end] .== Tf(Inf))
+        end
+
+        @testset "Loss monotonicity" begin
+            # Setup with more iterations to see convergence behavior
+            eos_test = EOSWrapper(inner_model; alpha=1.0, max_iter=20, tol=1e-8)
+            args = MLJModelInterface.reformat(eos_test, X_table, y_cat)
+            T_instances_test = args[2]
+            Tf = args[3]
+
+            weights, distances, loss, inner_fitresult, inner_cache, inner_report = EOS.initialise(
+                eos_test, 0, args[1], T_instances_test, Tf
+            )
+
+            to = TimerOutput()
+
+            _, _, _, iterations, _ = EOS._fit!(
+                weights, distances, loss, inner_fitresult, inner_cache, inner_report,
+                eos_test, 0, args[1], to
+            )
+
+            # Test that loss generally decreases (allowing for small numerical increases)
+            @test loss[iterations + 1] <= loss[1] + 1e-10
+
+            # Test that each step doesn't increase loss significantly
+            for i in 2:(iterations + 1)
+                @test loss[i] - loss[i - 1] <= 1e-10
+            end
+        end
+
+        @testset "Uniform weights with alpha=Inf" begin
+            # Create EOS model with alpha=Inf - should preserve uniform weights
+            eos_uniform = EOSWrapper(inner_model; alpha=Inf, max_iter=10, tol=1e-6)
+            args = MLJModelInterface.reformat(eos_uniform, X_table, y_cat)
+            T_instances_test = args[2]
+            Tf = args[3]
+
+            weights, distances, loss, inner_fitresult, inner_cache, inner_report = EOS.initialise(
+                eos_uniform, 0, args[1], T_instances_test, Tf
+            )
+
+            to = TimerOutput()
+
+            _, _, _, iterations, _ = EOS._fit!(
+                weights, distances, loss, inner_fitresult, inner_cache, inner_report,
+                eos_uniform, 0, args[1], to
+            )
+
+            # With alpha=Inf, weights should remain uniform
+            expected_weight = Tf(1.0) / T_instances_test
+            @test all(isapprox.(weights, expected_weight, atol=1e-10))
+        end
+    end
+end
+
+@testset "2. EOS Update Method Tests" begin
+    X, y = MLJBase.@load_iris
+    @testset "update equivalence to fit" begin
+        # First, train a model to full convergence to get the baseline
+        inner_model_full = eSPAClassifier(K=3, epsC=1e-3, epsW=1e-1, max_iter=1, tol=1e-8, random_state=42)
+        eos_model_full = EOSWrapper(inner_model_full; alpha=1.0, max_iter=20, tol=1e-8)
+        mach_full = MLJBase.machine(eos_model_full, X, y)
+        MLJBase.fit!(mach_full; verbosity=0)
+
+        # Get the total iterations needed for convergence
+        total_iterations = MLJBase.report(mach_full).iterations
+        @test total_iterations >= 3  # Ensure we have enough iterations to split
+
+        # Choose a split point (about halfway through)
+        split_iter = max(2, total_iterations ÷ 2)
+
+        # Train a model with limited iterations
+        inner_model_partial = eSPAClassifier(K=3, epsC=1e-3, epsW=1e-1, max_iter=1, tol=1e-8, random_state=42)
+        eos_model_partial = EOSWrapper(inner_model_partial; alpha=1.0, max_iter=split_iter, tol=1e-8)
+        mach_partial = MLJBase.machine(eos_model_partial, X, y)
+        MLJBase.fit!(mach_partial; verbosity=0)
+
+        # Verify the partial model didn't fully converge
+        partial_iterations = MLJBase.report(mach_partial).iterations
+        @test partial_iterations == split_iter
+
+        # Update the partial model to complete training
+        remaining_iter = total_iterations - split_iter + 5  # Add buffer for safety
+        eos_model_partial.max_iter = remaining_iter
+        MLJBase.fit!(mach_partial; verbosity=0)  # This should call update internally
+
+        # Get final results
+        fitresult_full = mach_full.fitresult
+        fitresult_partial = mach_partial.fitresult
+        report_full = MLJBase.report(mach_full)
+        report_partial = MLJBase.report(mach_partial)
+
+        # Test that final fitted parameters are equivalent
+        weights_full = MLJBase.fitted_params(mach_full).weights
+        weights_partial = MLJBase.fitted_params(mach_partial).weights
+        @test weights_full ≈ weights_partial atol=1e-10
+
+        # Test that inner model parameters are equivalent
+        inner_params_full = MLJBase.fitted_params(mach_full).inner_params
+        inner_params_partial = MLJBase.fitted_params(mach_partial).inner_params
+        @test inner_params_full.C ≈ inner_params_partial.C atol=1e-10
+        @test inner_params_full.W ≈ inner_params_partial.W atol=1e-10
+        @test inner_params_full.L ≈ inner_params_partial.L atol=1e-10
+
+        # Test full loss history is equivalent and monotonically decreasing
+        @test report_full.loss ≈ report_partial.loss atol=1e-10
+        for i in 2:length(report_full.loss)
+            @test report_full.loss[i] <= report_full.loss[i - 1] + 1e-10
+        end
+
+        # Test that total iterations are equivalent (within small tolerance)
+        total_iter_full = report_full.iterations
+        total_iter_partial = report_partial.iterations
+        @test total_iter_full == total_iter_partial
+
+        # Test that ESS values are equivalent
+        @test report_full.ESS ≈ report_partial.ESS atol=1e-10
+    end
+
+    @testset "update preserves cache and report structure" begin
+        # Test that update properly accumulates timings and loss history
+
+        # Train partially
+        inner_model = eSPAClassifier(K=3, epsC=1e-3, epsW=1e-1, max_iter=1, tol=1e-8, random_state=101)
+        eos_model = EOSWrapper(inner_model; alpha=1.0, max_iter=5, tol=1e-8)
+        mach = MLJBase.machine(eos_model, X, y)
+        MLJBase.fit!(mach; verbosity=0)
+
+        # Get initial report
+        report1 = MLJBase.report(mach)
+        initial_iterations = report1.iterations
+        initial_loss_length = length(report1.loss)
+
+        # Update with more iterations
+        eos_model.max_iter = 10
+        MLJBase.fit!(mach; verbosity=0)
+
+        # Get updated report
+        report2 = MLJBase.report(mach)
+        final_iterations = report2.iterations
+        final_loss_length = length(report2.loss)
+
+        # Test that iterations and loss history accumulated properly
+        @test final_iterations >= initial_iterations
+        @test final_loss_length >= initial_loss_length
     end
 end
