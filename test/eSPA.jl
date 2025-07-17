@@ -1277,5 +1277,222 @@ end
         end
     end
 
-    # TODO: test update method
+    @testset "12. Update Method Tests" begin
+        @testset "update equivalence to fit" begin
+            # Create test data
+            X_table, y_cat = MLJBase.make_blobs(
+                150, 4; centers=3, rng=456, as_table=true
+            )
+
+            # First, train a model to full convergence to get the baseline
+            model_full = eSPAClassifier(;
+                K=3, epsC=1e-3, epsW=1e-1, max_iter=200, tol=1e-8, random_state=42
+            )
+            mach_full = MLJBase.machine(model_full, X_table, y_cat)
+            MLJBase.fit!(mach_full; verbosity=0)
+
+            # Get the total iterations needed for convergence
+            total_iterations = MLJBase.report(mach_full).iterations
+            @test total_iterations >= 3  # Ensure we have enough iterations to split
+
+            # Choose a split point (about halfway through)
+            split_iter = max(2, total_iterations ÷ 2)
+
+            # Train a model with limited iterations
+            model_partial = eSPAClassifier(;
+                K=3, epsC=1e-3, epsW=1e-1, max_iter=split_iter, tol=1e-8, random_state=42
+            )
+            mach_partial = MLJBase.machine(model_partial, X_table, y_cat)
+            MLJBase.fit!(mach_partial; verbosity=0)
+
+            # Verify the partial model didn't fully converge
+            partial_iterations = MLJBase.report(mach_partial).iterations
+            @test partial_iterations == split_iter
+
+            # Update the partial model to complete training
+            remaining_iter = total_iterations - split_iter + 5  # Add buffer for safety
+            model_partial.max_iter = remaining_iter
+            MLJBase.fit!(mach_partial; verbosity=0)  # This should call update internally
+
+            # Get final results
+            fitresult_full = mach_full.fitresult
+            fitresult_partial = mach_partial.fitresult
+            report_full = MLJBase.report(mach_full)
+            report_partial = MLJBase.report(mach_partial)
+
+            # Test that final fitted parameters are equivalent
+            @test fitresult_full.C ≈ fitresult_partial.C atol=1e-10
+            @test fitresult_full.W ≈ fitresult_partial.W atol=1e-10
+            @test fitresult_full.L ≈ fitresult_partial.L atol=1e-10
+            @test fitresult_full.G.rowval == fitresult_partial.G.rowval
+            @test fitresult_full.classes == fitresult_partial.classes
+
+            # Test that final loss values are equivalent
+            final_loss_full = report_full.loss[end]
+            final_loss_partial = report_partial.loss[end]
+            @test final_loss_full ≈ final_loss_partial atol=1e-10
+
+            # Test that total iterations are equivalent (within small tolerance)
+            total_iter_full = report_full.iterations
+            total_iter_partial = report_partial.iterations
+            @test abs(total_iter_full - total_iter_partial) <= 1
+
+            # Test that loss sequences match (concatenated partial should equal full)
+            # Allow for small differences due to numerical precision
+            if total_iter_full == total_iter_partial
+                @test report_full.loss ≈ report_partial.loss atol=1e-8
+            end
+        end
+
+        @testset "update with weights" begin
+            # Test update method with sample weights
+            X_table, y_cat = MLJBase.make_blobs(
+                100, 3; centers=2, rng=789, as_table=true
+            )
+            weights = rand(Random.MersenneTwister(789), 100)
+            weights ./= sum(weights)
+
+            # Full training with weights
+            model_full = eSPAClassifier(;
+                K=2, epsC=1e-3, epsW=1e-1, max_iter=100, tol=1e-8, random_state=123
+            )
+            mach_full = MLJBase.machine(model_full, X_table, y_cat, weights)
+            MLJBase.fit!(mach_full; verbosity=0)
+
+            total_iterations = MLJBase.report(mach_full).iterations
+            split_iter = max(2, total_iterations ÷ 2)
+
+            # Partial training with weights
+            model_partial = eSPAClassifier(;
+                K=2, epsC=1e-3, epsW=1e-1, max_iter=split_iter, tol=1e-8, random_state=123
+            )
+            mach_partial = MLJBase.machine(model_partial, X_table, y_cat, weights)
+            MLJBase.fit!(mach_partial; verbosity=0)
+
+            # Update to completion
+            model_partial.max_iter = total_iterations - split_iter + 5
+            MLJBase.fit!(mach_partial; verbosity=0)
+
+            # Test equivalence
+            fitresult_full = mach_full.fitresult
+            fitresult_partial = mach_partial.fitresult
+
+            @test fitresult_full.C ≈ fitresult_partial.C atol=1e-10
+            @test fitresult_full.W ≈ fitresult_partial.W atol=1e-10
+            @test fitresult_full.L ≈ fitresult_partial.L atol=1e-10
+            @test fitresult_full.G.rowval == fitresult_partial.G.rowval
+        end
+
+        @testset "update preserves cache and report structure" begin
+            # Test that update properly accumulates timings and loss history
+            X_table, y_cat = MLJBase.make_blobs(
+                80, 2; centers=2, rng=101, as_table=true
+            )
+
+            # Train partially
+            model = eSPAClassifier(;
+                K=2, epsC=1e-3, epsW=1e-1, max_iter=5, tol=1e-8, random_state=101
+            )
+            mach = MLJBase.machine(model, X_table, y_cat)
+            MLJBase.fit!(mach; verbosity=0)
+
+            # Get initial report
+            report1 = MLJBase.report(mach)
+            initial_iterations = report1.iterations
+            initial_loss_length = length(report1.loss)
+
+            # Update with more iterations
+            model.max_iter = 10
+            MLJBase.fit!(mach; verbosity=0)
+
+            # Get updated report
+            report2 = MLJBase.report(mach)
+            final_iterations = report2.iterations
+            final_loss_length = length(report2.loss)
+
+            # Test that iterations and loss history accumulated properly
+            @test final_iterations >= initial_iterations
+            @test final_loss_length >= initial_loss_length
+
+            # Test that loss is monotonically decreasing
+            for i in 2:length(report2.loss)
+                @test report2.loss[i] <= report2.loss[i-1] + 1e-10
+            end
+
+            # Test that timings are preserved and updated
+            @test haskey(report2.timings, "Training")
+            @test haskey(report2.timings, "Initialisation")
+        end
+
+        @testset "update with different hyperparameters" begin
+            # Test that update works when only changing max_iter
+            X_table, y_cat = MLJBase.make_blobs(
+                60, 2; centers=2, rng=202, as_table=true
+            )
+
+            model = eSPAClassifier(;
+                K=2, epsC=1e-3, epsW=1e-1, max_iter=3, tol=1e-8, random_state=202
+            )
+            mach = MLJBase.machine(model, X_table, y_cat)
+            MLJBase.fit!(mach; verbosity=0)
+
+            # Store initial state
+            fitresult1 = deepcopy(mach.fitresult)
+            report1 = MLJBase.report(mach)
+
+            # Update with more iterations
+            model.max_iter = 10
+            MLJBase.fit!(mach; verbosity=0)
+
+            # Test that the model continued from previous state
+            fitresult2 = mach.fitresult
+            report2 = MLJBase.report(mach)
+
+            # The final loss should be <= initial loss (improvement or same)
+            @test report2.loss[end] <= report1.loss[end] + 1e-10
+
+            # Total iterations should be more than initial
+            @test report2.iterations >= report1.iterations
+
+            # Test that feature names and classes are preserved
+            @test report1.features == report2.features
+            @test report1.classes == report2.classes
+        end
+
+        @testset "update convergence behavior" begin
+            # Test that update respects convergence tolerance
+            X_table, y_cat = MLJBase.make_blobs(
+                50, 2; centers=2, rng=303, as_table=true
+            )
+
+            model = eSPAClassifier(;
+                K=2, epsC=1e-3, epsW=1e-1, max_iter=5, tol=1e-6, random_state=303
+            )
+            mach = MLJBase.machine(model, X_table, y_cat)
+            MLJBase.fit!(mach; verbosity=0)
+
+            initial_loss = MLJBase.report(mach).loss[end]
+
+            # If already converged, update should not change much
+            model.max_iter = 20
+            MLJBase.fit!(mach; verbosity=0)
+
+            final_loss = MLJBase.report(mach).loss[end]
+
+            # Loss should not increase
+            @test final_loss <= initial_loss + 1e-10
+
+            # Test that the algorithm respects convergence
+            loss_history = MLJBase.report(mach).loss
+            if length(loss_history) > 1
+                # Check if the last few iterations show convergence
+                last_improvement = abs(loss_history[end] - loss_history[end-1]) / abs(loss_history[end-1])
+                if last_improvement <= model.tol
+                    @test true  # Properly converged
+                else
+                    @test MLJBase.report(mach).iterations == model.max_iter  # Hit max_iter
+                end
+            end
+        end
+    end
 end

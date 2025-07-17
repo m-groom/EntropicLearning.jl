@@ -61,7 +61,7 @@ function format_weights(w, y::AbstractVector{<:Integer}, Tf::Type{<:AbstractFloa
     return weights
 end
 
-# Helper function to get Π from y_int - TODO: add tests
+# Helper function to get Π from y_int
 function get_pi(
     y_int::AbstractVector{<:Integer}, M_classes::Integer, Tf::Type{<:AbstractFloat}=Float64
 )
