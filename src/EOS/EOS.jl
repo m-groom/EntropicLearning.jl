@@ -167,20 +167,14 @@ function MMI.fit(eos::EOSWrapper, verbosity::Int, args, T_instances::Int, Tf::Ty
     # Initialise the timer
     to = TimerOutput()
 
-    # TODO: make this a separate function
     # --- Initialisation ---
     @timeit to "Initialisation" begin
-        weights = fill(Tf(1/T_instances), T_instances)
-        inner_fitresult, inner_cache, inner_report = MMI.fit(eos.model, verbosity - 1, args...)
-        distances = EntropicLearning.eos_distances(eos.model, inner_fitresult, args...)
-        EntropicLearning.update_weights!(weights, distances, eos.alpha)
-        # Store losses for convergence tracking
-        loss = fill(Tf(Inf), eos.max_iter + 1)
+        weights, distances, loss, inner_fitresult, inner_cache, inner_report = initialise(
+            eos, verbosity, args, T_instances, Tf
+        )
         iterations = 0
-        loss[1] = EntropicLearning.eos_loss(eos.model, distances, weights, inner_fitresult, args...) - eos.alpha * EntropicLearning.entropy(weights)
     end
 
-    # TODO: make this a separate function
     # --- Main Optimisation Loop ---
     @timeit to "Training" begin
         for iter in 1:eos.max_iter
@@ -221,10 +215,12 @@ function MMI.fit(eos::EOSWrapper, verbosity::Int, args, T_instances::Int, Tf::Ty
     end
 
     # --- Return fitresult, cache and report ---
-    fitresult = EOSFitResult(inner_fitresult, distances, EntropicLearning.effective_dimension(weights, normalise=true))
+    fitresult = EOSFitResult(
+        inner_fitresult, distances, EntropicLearning.effective_dimension(weights; normalise=true)
+    )
     report = (
         iterations=iterations,
-        loss=loss[1:iterations + 1],
+        loss=loss[1:(iterations + 1)],
         timings=to,
         ESS=EntropicLearning.effective_dimension(weights),
         weights=weights,
