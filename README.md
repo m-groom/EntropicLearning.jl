@@ -1,4 +1,7 @@
 # EntropicLearning.jl
+
+[![Code Style: Blue](https://img.shields.io/badge/code%20style-blue-4495d1.svg)](https://github.com/JuliaDiff/BlueStyle)
+
 An MLJ-compatibile implementation of various entropic learning methods. It currently includes:
 
 - eSPA+, described in [[1]](#1) and [[2]](#2)
